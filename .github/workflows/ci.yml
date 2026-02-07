@@ -7,8 +7,8 @@ on:
     branches: [main, master]
 
 jobs:
-  lint:
-    name: Lint
+  Test:
+    name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,4 +20,4 @@ jobs:
           buildCache: false
 
       - name: Run tests
-        run: ./bin/test.lua
+        run: lua ./bin/test.lua
