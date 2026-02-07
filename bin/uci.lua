@@ -2,14 +2,16 @@
 --[[
   UCI (Universal Chess Interface) compatible interface for DeltaChess engines.
   
-  Reads the engine ID from a command-line argument or the ENGINE environment
-  variable and provides a UCI interface to communicate with it.
+  Reads the engine ID from a command-line argument, the ENGINE environment
+  variable, or interactively via the 'engine' command.
   
   Usage:
-    lua bin/uci.lua fruit21
-    ENGINE=fruit21 lua bin/uci.lua
+    lua bin/uci.lua fruit21           # specify engine as argument
+    ENGINE=fruit21 lua bin/uci.lua    # specify via environment variable
+    lua bin/uci.lua                   # select engine interactively
     
   UCI protocol commands supported:
+    - engine <engine_id>: (custom) select engine interactively
     - uci: identify as UCI engine
     - isready: respond with readyok
     - ucinewgame: reset state
@@ -37,32 +39,41 @@ require("init")
 
 -- Get engine ID from command-line argument or environment variable
 local engineId = arg[1] or os.getenv("ENGINE")
-if not engineId or engineId == "" then
-  io.stderr:write("Error: No engine specified\n")
-  io.stderr:write("Usage: lua bin/uci.lua <engine_id>\n")
-  io.stderr:write("   or: ENGINE=<engine_id> lua bin/uci.lua\n")
-  os.exit(1)
-end
+local engine = nil
+local engineName = nil
+local engineAuthor = nil
 
--- Verify engine exists
-local engine = DeltaChess.Engines:Get(engineId)
-if not engine then
-  io.stderr:write("Error: Engine '" .. engineId .. "' not found\n")
-  io.stderr:write("Available engines: ")
-  local engineList = DeltaChess.Engines:GetEngineList()
-  if engineList then
-    for i, e in ipairs(engineList) do
-      if i > 1 then io.stderr:write(", ") end
-      io.stderr:write(e.id)
+-- Helper function to set/load engine
+local function setEngine(id)
+  local eng = DeltaChess.Engines:Get(id)
+  if not eng then
+    io.write("info string Error: Engine '" .. id .. "' not found\n")
+    io.write("info string Available engines: ")
+    local engineList = DeltaChess.Engines:GetEngineList()
+    if engineList then
+      for i, e in ipairs(engineList) do
+        if i > 1 then io.write(", ") end
+        io.write(e.id)
+      end
     end
-    io.stderr:write("\n")
+    io.write("\n")
+    io.flush()
+    return false
   end
-  os.exit(1)
+  
+  engineId = id
+  engine = eng
+  engineName = engine.name or engineId
+  engineAuthor = engine.author or "Unknown"
+  return true
 end
 
--- Engine metadata
-local engineName = engine.name or engineId
-local engineAuthor = engine.author or "Unknown"
+-- Try to set engine if provided
+if engineId and engineId ~= "" then
+  if not setEngine(engineId) then
+    os.exit(1)
+  end
+end
 
 -- Current position state
 local currentFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -223,48 +234,83 @@ local function uciLoop()
     end
     
     line = line:match("^%s*(.-)%s*$") -- trim whitespace
-    if line == "" then
-      goto continue
+    if line ~= "" then
+      local tokens = parseTokens(line)
+      local cmd = tokens[1]
+      
+      if cmd == "engine" then
+        -- Custom command to set engine
+        if tokens[2] then
+          if setEngine(tokens[2]) then
+            io.write("uciok\n")
+            io.flush()
+          end
+        else
+          io.write("info string Usage: engine <engine_id>\n")
+          io.flush()
+        end
+        
+      elseif cmd == "uci" then
+        if engine then
+          io.write("id name " .. engineName .. " (DeltaChess)\n")
+          io.write("id author " .. engineAuthor .. "\n")
+        else
+          io.write("id name DeltaChess UCI Interface\n")
+          io.write("id author DeltaChess\n")
+          io.write("info string No engine selected. Use: engine <engine_id>\n")
+        end
+        
+        -- Report UCI options (none for now)
+        
+        io.write("uciok\n")
+        io.flush()
+        
+      elseif cmd == "isready" then
+        if engine then
+          io.write("readyok\n")
+        else
+          io.write("info string No engine selected. Use: engine <engine_id>\n")
+          io.write("readyok\n")
+        end
+        io.flush()
+        
+      elseif cmd == "ucinewgame" then
+        if not engine then
+          io.write("info string No engine selected. Use: engine <engine_id>\n")
+          io.flush()
+        else
+          currentFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+          moveHistory = {}
+        end
+        
+      elseif cmd == "position" then
+        if not engine then
+          io.write("info string No engine selected. Use: engine <engine_id>\n")
+          io.flush()
+        else
+          handlePosition(tokens)
+        end
+        
+      elseif cmd == "go" then
+        if not engine then
+          io.write("info string No engine selected. Use: engine <engine_id>\n")
+          io.write("bestmove 0000\n")
+          io.flush()
+        else
+          handleGo(tokens)
+        end
+        
+      elseif cmd == "quit" then
+        break
+        
+      elseif cmd == "stop" then
+        -- Not implemented - engines run synchronously
+        isCalculating = false
+        
+      else
+        -- Unknown command, ignore per UCI spec
+      end
     end
-    
-    local tokens = parseTokens(line)
-    local cmd = tokens[1]
-    
-    if cmd == "uci" then
-      io.write("id name " .. engineName .. " (DeltaChess)\n")
-      io.write("id author " .. engineAuthor .. "\n")
-      
-      -- Report UCI options (none for now)
-      
-      io.write("uciok\n")
-      io.flush()
-      
-    elseif cmd == "isready" then
-      io.write("readyok\n")
-      io.flush()
-      
-    elseif cmd == "ucinewgame" then
-      currentFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-      moveHistory = {}
-      
-    elseif cmd == "position" then
-      handlePosition(tokens)
-      
-    elseif cmd == "go" then
-      handleGo(tokens)
-      
-    elseif cmd == "quit" then
-      break
-      
-    elseif cmd == "stop" then
-      -- Not implemented - engines run synchronously
-      isCalculating = false
-      
-    else
-      -- Unknown command, ignore per UCI spec
-    end
-    
-    ::continue::
   end
 end
 

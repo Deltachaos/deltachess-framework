@@ -206,7 +206,7 @@ lua bin/play.lua beat_highest_piece 500
 lua bin/play.lua beat_highest_piece 500 other_engine 600
 ```
 
-**UCI interface (bin/uci.lua):** Provides a UCI (Universal Chess Interface) compatible interface to any engine. Specify the engine via command-line argument or the `ENGINE` environment variable:
+**UCI interface (bin/uci.lua):** Provides a UCI (Universal Chess Interface) compatible interface to any engine. Specify the engine via command-line argument, the `ENGINE` environment variable, or interactively:
 ```bash
 # Via command-line argument (preferred):
 lua bin/uci.lua fruit21
@@ -215,9 +215,14 @@ lua bin/uci.lua fruit21
 
 # Via environment variable:
 ENGINE=fruit21 lua bin/uci.lua
+
+# Interactively - select engine after starting:
+lua bin/uci.lua
+# Then use: engine <engine_id>
 ```
 
 Supported UCI commands:
+- `engine <engine_id>` – (custom) select engine interactively
 - `uci` – identify as UCI engine
 - `isready` – respond with readyok
 - `ucinewgame` – reset state
@@ -225,9 +230,15 @@ Supported UCI commands:
 - `go [wtime <x>] [btime <x>] [movetime <x>] [depth <x>] [nodes <x>]` – start calculating
 - `quit` – exit
 
-Example session:
+Example session (with interactive engine selection):
 ```bash
-$ lua bin/uci.lua fruit21
+$ lua bin/uci.lua
+uci
+id name DeltaChess UCI Interface
+id author DeltaChess
+info string No engine selected. Use: engine <engine_id>
+uciok
+engine fruit21
 uci
 id name Fruit 2.1 (DeltaChess)
 id author Fabien Letouzey
