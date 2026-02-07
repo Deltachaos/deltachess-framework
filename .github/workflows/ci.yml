@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Lua
+        uses: leafo/gh-actions-lua@v9
+        with:
+          luaVersion: "5.4"
+          buildCache: false
+
+      - name: Run tests
+        run: ./bin/test.lua
