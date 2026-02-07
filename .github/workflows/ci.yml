@@ -17,7 +17,6 @@ jobs:
         uses: leafo/gh-actions-lua@v9
         with:
           luaVersion: "5.4"
-          buildCache: false
 
       - name: Run tests
         run: TEST_IGNORE_SLUGS=engine_consistency_integration lua ./bin/test.lua
@@ -34,7 +33,6 @@ jobs:
         uses: leafo/gh-actions-lua@v9
         with:
           luaVersion: "5.4"
-          buildCache: false
 
       - name: List available engines
         id: list_engines
@@ -59,7 +57,6 @@ jobs:
         uses: leafo/gh-actions-lua@v9
         with:
           luaVersion: "5.4"
-          buildCache: false
 
       - name: Run engine consistency tests for ${{ matrix.engine }}
         run: ALLOWED_ENGINES=${{ matrix.engine }} TEST_ONLY_SLUGS=engine_consistency_integration lua ./bin/test.lua
