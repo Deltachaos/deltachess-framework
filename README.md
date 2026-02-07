@@ -206,11 +206,15 @@ lua bin/play.lua beat_highest_piece 500
 lua bin/play.lua beat_highest_piece 500 other_engine 600
 ```
 
-**UCI interface (bin/uci.lua):** Provides a UCI (Universal Chess Interface) compatible interface to any engine. Specify the engine via the `ENGINE` environment variable:
+**UCI interface (bin/uci.lua):** Provides a UCI (Universal Chess Interface) compatible interface to any engine. Specify the engine via command-line argument or the `ENGINE` environment variable:
 ```bash
-ENGINE=fruit21 lua bin/uci.lua
+# Via command-line argument (preferred):
+lua bin/uci.lua fruit21
 # Or make it executable and run directly:
-ENGINE=sunfish ./bin/uci.lua
+./bin/uci.lua sunfish
+
+# Via environment variable:
+ENGINE=fruit21 lua bin/uci.lua
 ```
 
 Supported UCI commands:
@@ -223,7 +227,7 @@ Supported UCI commands:
 
 Example session:
 ```bash
-$ ENGINE=fruit21 lua bin/uci.lua
+$ lua bin/uci.lua fruit21
 uci
 id name Fruit 2.1 (DeltaChess)
 id author Fabien Letouzey

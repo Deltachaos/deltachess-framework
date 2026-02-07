@@ -2,10 +2,11 @@
 --[[
   UCI (Universal Chess Interface) compatible interface for DeltaChess engines.
   
-  Reads the engine ID from the ENGINE environment variable and provides a UCI
-  interface to communicate with it.
+  Reads the engine ID from a command-line argument or the ENGINE environment
+  variable and provides a UCI interface to communicate with it.
   
   Usage:
+    lua bin/uci.lua fruit21
     ENGINE=fruit21 lua bin/uci.lua
     
   UCI protocol commands supported:
@@ -34,11 +35,12 @@ package.path = projectRoot .. "lib" .. sep .. "?.lua;" ..
 -- Load DeltaChess modules
 require("init")
 
--- Get engine ID from environment variable
-local engineId = os.getenv("ENGINE")
+-- Get engine ID from command-line argument or environment variable
+local engineId = arg[1] or os.getenv("ENGINE")
 if not engineId or engineId == "" then
-  io.stderr:write("Error: ENGINE environment variable not set\n")
-  io.stderr:write("Usage: ENGINE=<engine_id> lua bin/uci.lua\n")
+  io.stderr:write("Error: No engine specified\n")
+  io.stderr:write("Usage: lua bin/uci.lua <engine_id>\n")
+  io.stderr:write("   or: ENGINE=<engine_id> lua bin/uci.lua\n")
   os.exit(1)
 end
 
