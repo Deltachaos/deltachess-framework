@@ -22,17 +22,36 @@ jobs:
       - name: Run tests
         run: TEST_IGNORE_SLUGS=engine_consistency_integration lua ./bin/test.lua
 
+  discover-engines:
+    name: Discover Engines
+    runs-on: ubuntu-latest
+    outputs:
+      engines: ${{ steps.list_engines.outputs.engines }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Lua
+        uses: leafo/gh-actions-lua@v9
+        with:
+          luaVersion: "5.4"
+          buildCache: false
+
+      - name: List available engines
+        id: list_engines
+        run: |
+          ENGINES=$(lua bin/engines.lua)
+          echo "engines=$ENGINES" >> $GITHUB_OUTPUT
+          lua bin/engines.lua --check
+
   engine-consistency:
     name: Engine Consistency (${{ matrix.engine }})
     runs-on: ubuntu-latest
+    needs: discover-engines
+    if: needs.discover-engines.outputs.engines != '[]'
     strategy:
       fail-fast: false
       matrix:
-        engine:
-          - dumbgoblin
-          - fruit21
-          - garbochess
-          - sunfish
+        engine: ${{ fromJson(needs.discover-engines.outputs.engines) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,4 +62,4 @@ jobs:
           buildCache: false
 
       - name: Run engine consistency tests for ${{ matrix.engine }}
-        run: ALLOWED_ENGINES=${{ matrix.engine }} lua ./bin/test.lua --only=engine_consistency_integration
+        run: ALLOWED_ENGINES=${{ matrix.engine }} TEST_ONLY_SLUGS=engine_consistency_integration lua ./bin/test.lua
