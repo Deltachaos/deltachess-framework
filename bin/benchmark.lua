@@ -50,7 +50,7 @@ local function randomLegalMove(board)
 end
 
 -- Run one test: engine vs random, up to MAX_ENGINE_MOVES engine moves; return average thinking time in ms or nil on error.
--- Runs synchronously via Scheduler(next) => next().
+-- Runs synchronously via DelayFn(next) => next().
 local function runOneTest(engineId, elo)
   local board = Board.New()
   local times = {}   -- list of thinking times in seconds (from os.clock())
@@ -85,7 +85,7 @@ local function runOneTest(engineId, elo)
     EngineRunner.Create(engineId)
       :Fen(fen)
       :Elo(elo)
-      :Scheduler(function(next) next() end)
+      :DelayFn(function(next) next() end)
       :OnComplete(function(res, err)
         local t1 = os.clock()
         if err or not res or not res.move then
@@ -120,7 +120,7 @@ local function runOneTest(engineId, elo)
       :Run()
   end
 
-  -- Engine plays white (first move); runs synchronously via Scheduler(next) next()
+  -- Engine plays white (first move); runs synchronously via DelayFn(next) => next()
   doEngineMove(function() end)
 
   if errMsg then return nil, errMsg end

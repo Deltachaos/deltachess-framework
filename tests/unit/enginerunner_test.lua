@@ -10,7 +10,7 @@ local MoveGen = DeltaChess.MoveGen
 local Engines = DeltaChess.Engines
 local EngineRunner = DeltaChess.EngineRunner
 
-Test.suite("EngineRunner")
+Test.suite("EngineRunner", "enginerunner")
 
 --------------------------------------------------------------------------------
 -- Mock Engine Setup
@@ -24,7 +24,7 @@ local function createMockEngine(id, behavior)
     GetEloRange = function(self)
       return { 1000, 2000 }
     end,
-    Calculate = function(self, state, loopFn, onComplete)
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
       loopFn = loopFn or function(step, done) while step() ~= false do end; done() end
       if behavior.immediate then
         -- Return result immediately
@@ -392,7 +392,7 @@ Test.test("Uses engine default ELO when not specified", function()
     GetEloRange = function(self)
       return { 1200, 1800 }
     end,
-    Calculate = function(self, state, loopFn, onComplete)
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
       eloUsed = state.elo
       onComplete({ move = "e2e4" }, nil)
     end
@@ -420,7 +420,7 @@ Test.test("Uses provided ELO over default", function()
     GetEloRange = function(self)
       return { 1200, 1800 }
     end,
-    Calculate = function(self, state, loopFn, onComplete)
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
       eloUsed = state.elo
       onComplete({ move = "e2e4" }, nil)
     end
@@ -445,7 +445,7 @@ Test.test("Uses default time limit when not specified", function()
   local timeLimitUsed = nil
   
   DeltaChess.Engines.Registry["mock_time_default"] = {
-    Calculate = function(self, state, loopFn, onComplete)
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
       timeLimitUsed = state.time_limit_ms
       onComplete({ move = "e2e4" }, nil)
     end
@@ -465,7 +465,7 @@ Test.test("Uses provided time limit", function()
   local timeLimitUsed = nil
   
   DeltaChess.Engines.Registry["mock_time_custom"] = {
-    Calculate = function(self, state, loopFn, onComplete)
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
       timeLimitUsed = state.time_limit_ms
       onComplete({ move = "e2e4" }, nil)
     end
@@ -490,7 +490,7 @@ Test.test("Builds FEN from moves when FEN not provided", function()
   local fenUsed = nil
   
   DeltaChess.Engines.Registry["mock_moves_to_fen"] = {
-    Calculate = function(self, state, loopFn, onComplete)
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
       fenUsed = state.fen
       onComplete({ move = "e7e5" }, nil)  -- Legal response after e2e4
     end

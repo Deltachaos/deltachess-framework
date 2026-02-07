@@ -27,7 +27,7 @@ local function getEngineList()
   return list
 end
 
-Test.suite("EngineRunner integration (all engines)")
+Test.suite("EngineRunner consistency", "engine_consistency_integration")
 
 -- Sync loopFn: runs all steps in a tight while-loop. No stack growth.
 local function syncLoop(step, done)

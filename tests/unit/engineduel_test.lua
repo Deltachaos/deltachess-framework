@@ -9,7 +9,7 @@ local EngineDuel = DeltaChess.EngineDuel
 local Engines = DeltaChess.Engines
 local MoveGen = DeltaChess.MoveGen
 
-Test.suite("EngineDuel")
+Test.suite("EngineDuel", "engineduel")
 
 --------------------------------------------------------------------------------
 -- Helper Functions
@@ -44,7 +44,7 @@ local function createSequenceEngine(id, moves)
     id = id,
     name = "Sequence Engine " .. id,
     GetEloRange = function() return { 1000, 2000 } end,
-    Calculate = function(self, state, loopFn, onComplete)
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
       moveIndex = moveIndex + 1
       local move = moves[moveIndex]
       if move then
@@ -62,7 +62,7 @@ local function createErrorEngine(id, errorMsg)
     id = id,
     name = "Error Engine " .. id,
     GetEloRange = function() return { 1000, 2000 } end,
-    Calculate = function(self, state, loopFn, onComplete)
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
       onComplete(nil, errorMsg or { message = "test error" })
     end
   }
@@ -74,7 +74,7 @@ local function createNoMoveEngine(id)
     id = id,
     name = "No Move Engine " .. id,
     GetEloRange = function() return { 1000, 2000 } end,
-    Calculate = function(self, state, loopFn, onComplete)
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
       onComplete(nil, nil)
     end
   }
@@ -86,7 +86,7 @@ local function createInvalidMoveEngine(id)
     id = id,
     name = "Invalid Move Engine " .. id,
     GetEloRange = function() return { 1000, 2000 } end,
-    Calculate = function(self, state, loopFn, onComplete)
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
       onComplete({ move = "z9z9" }, nil)  -- Invalid square
     end
   }
@@ -98,7 +98,7 @@ local function createFirstMoveEngine(id)
     id = id,
     name = "First Move Engine " .. id,
     GetEloRange = function() return { 1000, 2000 } end,
-    Calculate = function(self, state, loopFn, onComplete)
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
       local pos = MoveGen.ParseFen(state.fen)
       local legal = MoveGen.LegalMoves(pos)
       if #legal > 0 then
@@ -427,7 +427,7 @@ Test.test("PlayGame: passes ELO to engines", function()
     id = "elo_test_white",
     name = "ELO Test White",
     GetEloRange = function() return { 1000, 2000 } end,
-    Calculate = function(self, state, loopFn, onComplete)
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
       whiteEloReceived = state.elo
       onComplete(nil, nil)  -- End game
     end
@@ -437,7 +437,7 @@ Test.test("PlayGame: passes ELO to engines", function()
     id = "elo_test_black",
     name = "ELO Test Black",
     GetEloRange = function() return { 1000, 2000 } end,
-    Calculate = function(self, state, loopFn, onComplete)
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
       blackEloReceived = state.elo
       onComplete(nil, nil)
     end
@@ -648,7 +648,7 @@ local function createKnightShuffleEngine(id)
     id = id,
     name = "Knight Shuffle Engine " .. id,
     GetEloRange = function() return { 1000, 2000 } end,
-    Calculate = function(self, state, loopFn, onComplete)
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
       moveIndex = (moveIndex % #knightMoves) + 1
       local move = knightMoves[moveIndex]
       -- Verify the move is legal, otherwise use first legal move

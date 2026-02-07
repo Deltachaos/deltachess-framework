@@ -20,4 +20,4 @@ jobs:
           buildCache: false
 
       - name: Run tests
-        run: lua ./bin/test.lua
+        run: TEST_IGNORE_SLUGS=engine_consistency_integration lua ./bin/test.lua

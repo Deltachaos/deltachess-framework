@@ -7,7 +7,7 @@ local Test = require("test")
 
 local Util = DeltaChess.Util
 
-Test.suite("Util")
+Test.suite("Util", "util")
 
 --------------------------------------------------------------------------------
 -- bitPolyfill.band Tests

@@ -9,7 +9,7 @@ local BoardMove = DeltaChess.BoardMove
 local Board = DeltaChess.Board
 local Constants = DeltaChess.Constants
 
-Test.suite("BoardMove")
+Test.suite("BoardMove", "boardmove")
 
 --------------------------------------------------------------------------------
 -- Constructor: New, Wrap

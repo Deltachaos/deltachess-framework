@@ -35,7 +35,7 @@ end
 --   :TimeLimitMs(ms)    - Optional. Max time in ms. Default: 20000 (20 seconds).
 --   :OnComplete(cb)     - Required before Run(). function(result, err).
 --   :LoopFn(fn)         - Optional. loopFn(stepFn, doneFn) loop driver. Default: syncLoop.
---   :Scheduler(fn)      - Deprecated alias for :LoopFn(). Kept for backward compatibility.
+--   :DelayFn(fn)        - Optional. function(next) to defer callbacks. Default: call next() immediately.
 --   :HandleError(cb)    - Optional. function(err) called on engine error. If returns false,
 --                         error propagates. Otherwise, a random legal move is returned.
 --   :Run()              - Start calculation.
@@ -261,7 +261,7 @@ local function Builder(engineId)
                 end
 
                 local ok, err = pcall(function()
-                    engine:Calculate(state, wrappedLoopFn, wrappedDelayFn, done)
+                    engine:Calculate(state, wrappedLoopFn, wrappedStepFn, done)
                 end)
                 if not ok then
                     onComplete(nil, { message = "engine error: " .. tostring(err), move = nil })

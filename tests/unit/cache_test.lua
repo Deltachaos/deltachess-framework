@@ -6,7 +6,7 @@
 local Test = require("test")
 local Cache = require("Cache")
 
-Test.suite("Cache")
+Test.suite("Cache", "cache")
 
 --------------------------------------------------------------------------------
 -- Basic caching: same args return same result, underlying called once

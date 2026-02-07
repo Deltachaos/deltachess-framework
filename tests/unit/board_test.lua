@@ -8,7 +8,7 @@ local Test = require("test")
 local Board = DeltaChess.Board
 local MoveGen = DeltaChess.MoveGen
 
-Test.suite("Board")
+Test.suite("Board", "board")
 
 --------------------------------------------------------------------------------
 -- Creation Tests

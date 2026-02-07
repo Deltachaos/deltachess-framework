@@ -6,7 +6,7 @@
 local Test = require("test")
 local M = DeltaChess.MoveGen
 
-Test.suite("MoveGen")
+Test.suite("MoveGen", "movegen")
 
 -- Helper: check if a move list contains a specific UCI move
 local function containsMove(moves, uci)

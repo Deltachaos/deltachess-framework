@@ -12,12 +12,16 @@ local Test = {}
 Test.passed = 0
 Test.failed = 0
 Test.currentSuite = nil
+Test.currentSlug = nil
 Test.suites = {}
 -- Parallel workers: when set, Test.test only registers; runWorkerSlice runs this worker's tests
 Test.tests = {}
 Test.workerId = tonumber(os.getenv("TEST_WORKER")) or nil
 Test.totalWorkers = tonumber(os.getenv("TEST_WORKERS")) or 1
 Test.parallelMode = (Test.totalWorkers and Test.totalWorkers > 1)
+-- Slug filters: set via command-line args (--only=slug1,slug2 or --ignore=slug1,slug2)
+Test.onlySlugs = {}   -- if not empty, only run tests with these slugs
+Test.ignoreSlugs = {} -- skip tests with these slugs
 
 --------------------------------------------------------------------------------
 -- Assertions
@@ -116,7 +120,11 @@ end
 
 function Test.test(name, fn)
   if Test.parallelMode then
-    table.insert(Test.tests, { name = name, fn = fn, suite = Test.currentSuite })
+    table.insert(Test.tests, { name = name, fn = fn, suite = Test.currentSuite, slug = Test.currentSlug })
+    return
+  end
+  -- Skip test if slug filters apply
+  if Test.shouldSkipSlug(Test.currentSlug) then
     return
   end
   local ok, err = pcall(fn)
@@ -131,15 +139,36 @@ function Test.test(name, fn)
   end
 end
 
-function Test.suite(name)
+function Test.suite(name, slug)
   Test.currentSuite = name
-  table.insert(Test.suites, name)
+  Test.currentSlug = slug
+  table.insert(Test.suites, { name = name, slug = slug })
+end
+
+function Test.shouldSkipSlug(slug)
+  -- If --only is specified and this slug is not in the list, skip it
+  if #Test.onlySlugs > 0 then
+    local found = false
+    for _, s in ipairs(Test.onlySlugs) do
+      if s == slug then
+        found = true
+        break
+      end
+    end
+    if not found then return true end
+  end
+  -- If --ignore is specified and this slug is in the list, skip it
+  for _, s in ipairs(Test.ignoreSlugs) do
+    if s == slug then return true end
+  end
+  return false
 end
 
 function Test.reset()
   Test.passed = 0
   Test.failed = 0
   Test.currentSuite = nil
+  Test.currentSlug = nil
   Test.suites = {}
   Test.tests = {}
 end
@@ -207,15 +236,18 @@ function Test.runWorkerSlice(workerId, totalWorkers)
   totalWorkers = totalWorkers or Test.totalWorkers or 1
   for i, t in ipairs(Test.tests) do
     if (i - 1) % totalWorkers == workerId then
-      local ok, err = pcall(t.fn)
-      local prefix = t.suite and (t.suite .. ": ") or ""
-      if ok then
-        print("PASS: " .. prefix .. t.name)
-        Test.passed = Test.passed + 1
-      else
-        print("FAIL: " .. prefix .. t.name)
-        print("      " .. tostring(err))
-        Test.failed = Test.failed + 1
+      -- Skip test if slug filters apply
+      if not Test.shouldSkipSlug(t.slug) then
+        local ok, err = pcall(t.fn)
+        local prefix = t.suite and (t.suite .. ": ") or ""
+        if ok then
+          print("PASS: " .. prefix .. t.name)
+          Test.passed = Test.passed + 1
+        else
+          print("FAIL: " .. prefix .. t.name)
+          print("      " .. tostring(err))
+          Test.failed = Test.failed + 1
+        end
       end
     end
   end
@@ -251,117 +283,6 @@ function Test.runAll(dir)
   end
 
   return Test.summary()
-end
-
---------------------------------------------------------------------------------
--- Engine game record helpers (integration tests)
---------------------------------------------------------------------------------
-
---- Build a game record id from white/black engine names.
-function Test.recordId(whiteEngine, blackEngine, suffix)
-  suffix = suffix or ""
-  return (whiteEngine .. "_vs_" .. blackEngine .. suffix):gsub("[^%w_]", "_")
-end
-
---- Replay moves on a fresh board and assert final result and end reason match the record.
-function Test.assertGameRecord(record)
-  Test.assertNotNil(record.moves, "record must have moves")
-  Test.assertNotNil(record.result, "record must have result")
-  local Board = DeltaChess.Board
-  local Constants = DeltaChess.Constants
-  local board = Board.New()
-  if record.positions and record.positions[0] then
-    Test.assertEq(board:GetFen(), record.positions[0], "initial FEN")
-  end
-  for i, uci in ipairs(record.moves) do
-    local ok, err = board:MakeMoveUci(uci)
-    Test.assertNotNil(ok, "move " .. i .. " " .. uci .. " must be legal: " .. tostring(err))
-    if record.positions and record.positions[i] then
-      local expectedFen = record.positions[i]
-      local actualFen = board:GetFen()
-      Test.assertEq(actualFen, expectedFen, "FEN after move " .. i .. " " .. uci)
-    end
-  end
-  Test.assertEq(board:GetStatus(), Constants.ENDED, "game must be ended after replay")
-  Test.assertEq(board:GetResult(), record.result, "result must match record")
-  if record.endReason ~= nil and record.endReason ~= "" then
-    Test.assertEq(board:GetEndReason(), record.endReason, "endReason must match record")
-  end
-end
-
---- Load game records from a Lua file that returns a table of records.
-function Test.loadGameRecords(path)
-  local chunk, err = loadfile(path)
-  if not chunk then
-    error("failed to load game records from " .. tostring(path) .. ": " .. tostring(err))
-  end
-  local records = chunk()
-  if type(records) ~= "table" then
-    error("game records file must return a table")
-  end
-  return Test.normalizeRecordList(records)
-end
-
---- Normalize a table of records into a sorted array (by id).
-function Test.normalizeRecordList(records)
-  local list = {}
-  for k, v in pairs(records) do
-    if type(k) == "number" then
-      list[#list + 1] = v
-    else
-      local r = (type(v) == "table") and v or { id = k, data = v }
-      if not r.id then r.id = k end
-      list[#list + 1] = r
-    end
-  end
-  table.sort(list, function(a, b) return (a.id or "") < (b.id or "") end)
-  return list
-end
-
---- Normalize a record from JSON: positions may have string keys ("0", "1", ...); convert to number keys.
-function Test.normalizeRecordFromJson(record)
-  if not record then return record end
-  if record.positions and type(record.positions) == "table" then
-    local normalized = {}
-    for k, v in pairs(record.positions) do
-      local n = tonumber(k)
-      if n then normalized[n] = v end
-    end
-    record.positions = normalized
-  end
-  return record
-end
-
---- Load one game record from a JSON file (uses file.read and global json).
-function Test.loadGameRecordFromJson(path)
-  if not _G.json then return nil, "json library not available" end
-  local content, err = file.read(path)
-  if not content then return nil, err or "file not found" end
-  local ok, data = pcall(_G.json.decode, content)
-  if not ok then return nil, data end
-  return Test.normalizeRecordFromJson(data)
-end
-
---- Load all game records from a directory of JSON snapshot files (*.json).
-function Test.loadGameRecordsFromSnapshotDir(dirPath)
-  local list = {}
-  if not _G.json then return list end
-  local sep = package.config:sub(1, 1)
-  local dirNormalized = dirPath:gsub("/", sep):gsub(sep .. "$", "")
-  local names, err = file.listDir(dirNormalized)
-  if not names then return list end
-  for _, trimmed in ipairs(names) do
-    if trimmed ~= "" and trimmed:match("%.json$") then
-      local fullPath = dirNormalized .. sep .. trimmed
-      local rec = Test.loadGameRecordFromJson(fullPath)
-      if rec then
-        rec.id = rec.id or trimmed:gsub("%.json$", "")
-        list[#list + 1] = rec
-      end
-    end
-  end
-  table.sort(list, function(a, b) return (a.id or "") < (b.id or "") end)
-  return list
 end
 
 return Test

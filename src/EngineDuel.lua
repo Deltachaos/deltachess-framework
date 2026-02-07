@@ -97,19 +97,20 @@ function M.PlayGame(whiteEngineId, whiteElo, blackEngineId, blackElo, maxHalfMov
 
     local function doHalfMove(halfMoveNum, doneCb)
         local currentFen = board:GetFen()
-        local moves = board:GetMoveHistory()
+        local movesUci = board:GetMoveHistoryUci()
         local isWhite = board:IsWhiteToMove()
-        
+        local function lastMoveSan() return (board:GetLastMove() and board:GetLastMove():GetSan()) or nil end
+
         -- Check if board reports game has ended (checkmate, stalemate, 50-move rule)
         if board:IsEnded() then
             result = board:GetResult()
             endReason = board:GetEndReason()
-            notify({ 
-                fen = currentFen, 
-                moves = moves, 
-                halfMoveNum = #moves, 
-                lastMove = (moves[#moves] and moves[#moves]:GetUci()) or nil, 
-                lastMoveSan = (moves[#moves] and moves[#moves]:GetSan()) or nil,
+            notify({
+                fen = currentFen,
+                moves = movesUci,
+                halfMoveNum = #movesUci,
+                lastMove = movesUci[#movesUci],
+                lastMoveSan = lastMoveSan(),
                 result = result,
                 endReason = endReason
             })
@@ -121,12 +122,12 @@ function M.PlayGame(whiteEngineId, whiteElo, blackEngineId, blackElo, maxHalfMov
         if halfMoveNum > maxHalfMoves then
             result = Constants.TIMEOUT
             endReason = Constants.REASON_TIMEOUT
-            notify({ 
-                fen = currentFen, 
-                moves = moves, 
-                halfMoveNum = #moves, 
-                lastMove = (moves[#moves] and moves[#moves]:GetUci()) or nil, 
-                lastMoveSan = (moves[#moves] and moves[#moves]:GetSan()) or nil,
+            notify({
+                fen = currentFen,
+                moves = movesUci,
+                halfMoveNum = #movesUci,
+                lastMove = movesUci[#movesUci],
+                lastMoveSan = lastMoveSan(),
                 result = result,
                 endReason = endReason
             })
@@ -137,22 +138,22 @@ function M.PlayGame(whiteEngineId, whiteElo, blackEngineId, blackElo, maxHalfMov
         local engineId, elo = getEngineAndElo(isWhite)
         local builder = EngineRunner.Create(engineId)
             :Fen(currentFen)
-            :Moves(moves)
+            :Moves(movesUci)
             :OnComplete(function(res, err)
                 if not res and err then
                     -- Engine error
                     result = Constants.ERROR
                     errorMsg = err
                     endReason = Constants.REASON_ENGINE_ERROR
-                    notify({ 
-                        fen = currentFen, 
-                        moves = moves, 
-                        halfMoveNum = #moves, 
-                        lastMove = (moves[#moves] and moves[#moves]:GetUci()) or nil, 
-                        lastMoveSan = (moves[#moves] and moves[#moves]:GetSan()) or nil,
-                        result = result, 
+                    notify({
+                        fen = currentFen,
+                        moves = movesUci,
+                        halfMoveNum = #movesUci,
+                        lastMove = movesUci[#movesUci],
+                        lastMoveSan = lastMoveSan(),
+                        result = result,
                         endReason = endReason,
-                        errorMsg = errorMsg 
+                        errorMsg = errorMsg
                     })
                     if doneCb then doneCb() end
                     return
@@ -161,48 +162,47 @@ function M.PlayGame(whiteEngineId, whiteElo, blackEngineId, blackElo, maxHalfMov
                     -- No valid move returned (but no error message) - treat as draw
                     result = Constants.DRAWN
                     endReason = Constants.REASON_RESIGNATION
-                    notify({ 
-                        fen = currentFen, 
-                        moves = moves, 
-                        halfMoveNum = #moves, 
-                        lastMove = (moves[#moves] and moves[#moves]:GetUci()) or nil, 
-                        lastMoveSan = (moves[#moves] and moves[#moves]:GetSan()) or nil,
+                    notify({
+                        fen = currentFen,
+                        moves = movesUci,
+                        halfMoveNum = #movesUci,
+                        lastMove = movesUci[#movesUci],
+                        lastMoveSan = lastMoveSan(),
                         result = result,
                         endReason = endReason
                     })
                     if doneCb then doneCb() end
                     return
                 end
-                
+
                 local uci = res.move
                 local boardResult, boardErr = board:MakeMoveUci(uci)
                 if not boardResult then
                     result = Constants.ERROR
                     errorMsg = { message = "invalid move from engine", move = uci, detail = boardErr }
                     endReason = Constants.REASON_INVALID_MOVE
-                    notify({ 
-                        fen = currentFen, 
-                        moves = moves, 
-                        halfMoveNum = #moves, 
-                        lastMove = (moves[#moves] and moves[#moves]:GetUci()) or nil, 
-                        lastMoveSan = (moves[#moves] and moves[#moves]:GetSan()) or nil,
-                        result = result, 
+                    notify({
+                        fen = currentFen,
+                        moves = movesUci,
+                        halfMoveNum = #movesUci,
+                        lastMove = movesUci[#movesUci],
+                        lastMoveSan = lastMoveSan(),
+                        result = result,
                         endReason = endReason,
-                        errorMsg = errorMsg 
+                        errorMsg = errorMsg
                     })
                     if doneCb then doneCb() end
                     return
                 end
-                
-                local newMoves = board:GetMoveHistory()
-                local lastMoveObj = newMoves[#newMoves]
-                notify({ 
-                    fen = board:GetFen(), 
-                    moves = newMoves, 
-                    halfMoveNum = #newMoves, 
-                    lastMove = uci, 
-                    lastMoveSan = (lastMoveObj and lastMoveObj:GetSan()) or nil,
-                    result = nil 
+
+                local newMovesUci = board:GetMoveHistoryUci()
+                notify({
+                    fen = board:GetFen(),
+                    moves = newMovesUci,
+                    halfMoveNum = #newMovesUci,
+                    lastMove = uci,
+                    lastMoveSan = lastMoveSan(),
+                    result = nil
                 })
                 
                 -- Schedule next move
@@ -211,7 +211,7 @@ function M.PlayGame(whiteEngineId, whiteElo, blackEngineId, blackElo, maxHalfMov
                 end)
                 runPending()
             end)
-            :Scheduler(function(next) next() end)
+            :DelayFn(function(next) next() end)
         if elo then builder:Elo(elo) end
         builder:Run()
     end

@@ -10,15 +10,39 @@
     TEST_WORKERS=4 lua bin/test.lua   -- spawn 4 parallel workers (main spawns, then workers run slice)
     lua bin/test.lua --lua=C:\path\to\lua.exe
     set LUA_BIN=C:\path\to\lua.exe && lua bin/test.lua
+    lua bin/test.lua --only=slug1,slug2   -- run only tests with these slugs
+    lua bin/test.lua --ignore=slug1,slug2 -- skip tests with these slugs
 ]]
 
--- Parse --lua=path and env LUA_BIN / LUA for Lua binary used when spawning workers
+-- Parse command-line arguments
 local luaBin = os.getenv("LUA_BIN") or os.getenv("LUA") or "lua"
+local onlySlugs = {}
+local ignoreSlugs = {}
+
 for _, a in ipairs(arg) do
-  local path = a:match("^%-%-(lua)=(.+)$")
-  if path then
-    luaBin = path
-    break
+  local luaPath = a:match("^%-%-lua=(.+)$")
+  if luaPath then
+    luaBin = luaPath
+  end
+  
+  local only = a:match("^%-%-only=(.+)$")
+  if only then
+    for slug in only:gmatch("[^,]+") do
+      local trimmed = slug:gsub("^%s+", ""):gsub("%s+$", "")
+      if trimmed ~= "" then
+        table.insert(onlySlugs, trimmed)
+      end
+    end
+  end
+  
+  local ignore = a:match("^%-%-ignore=(.+)$")
+  if ignore then
+    for slug in ignore:gmatch("[^,]+") do
+      local trimmed = slug:gsub("^%s+", ""):gsub("%s+$", "")
+      if trimmed ~= "" then
+        table.insert(ignoreSlugs, trimmed)
+      end
+    end
   end
 end
 
@@ -85,6 +109,40 @@ require("init")
 -- Load test framework
 local Test = require("test")
 
+-- Apply slug filters from command-line arguments or environment variables
+local onlySlugsEnv = os.getenv("TEST_ONLY_SLUGS")
+local ignoreSlugsEnv = os.getenv("TEST_IGNORE_SLUGS")
+
+if onlySlugsEnv and onlySlugsEnv ~= "" then
+  for slug in onlySlugsEnv:gmatch("[^,]+") do
+    local trimmed = slug:gsub("^%s+", ""):gsub("%s+$", "")
+    if trimmed ~= "" then
+      table.insert(Test.onlySlugs, trimmed)
+    end
+  end
+elseif #onlySlugs > 0 then
+  Test.onlySlugs = onlySlugs
+end
+
+if ignoreSlugsEnv and ignoreSlugsEnv ~= "" then
+  for slug in ignoreSlugsEnv:gmatch("[^,]+") do
+    local trimmed = slug:gsub("^%s+", ""):gsub("%s+$", "")
+    if trimmed ~= "" then
+      table.insert(Test.ignoreSlugs, trimmed)
+    end
+  end
+elseif #ignoreSlugs > 0 then
+  Test.ignoreSlugs = ignoreSlugs
+end
+
+-- Debug output for slug filters
+if #Test.onlySlugs > 0 then
+  print("Only running tests with slugs: " .. table.concat(Test.onlySlugs, ", "))
+end
+if #Test.ignoreSlugs > 0 then
+  print("Ignoring tests with slugs: " .. table.concat(Test.ignoreSlugs, ", "))
+end
+
 -- Cross-platform: list immediate subdirectories (no find on Windows)
 local function discoverTestDirs(testsRoot)
   local dirs = {}
@@ -100,7 +158,8 @@ local function discoverTestDirs(testsRoot)
     for line in handle:lines() do
       local trimmed = line:gsub("^%s+", ""):gsub("%s+$", ""):gsub("\r", "")
       if trimmed ~= "" then
-        local full = pathForShell .. sep .. trimmed
+        -- find returns full paths; dir /b returns names only
+        local full = isAbsolute(trimmed) and trimmed or (pathForShell .. sep .. trimmed)
         table.insert(dirs, full)
       end
     end
@@ -151,7 +210,8 @@ local workerId = os.getenv("TEST_WORKER")  -- set when we are a worker
 -- Main process: spawn N workers in parallel when TEST_WORKERS > 1 and we are not already a worker
 if totalWorkers > 1 and workerId == nil then
   local scriptFull = projectRoot .. "bin" .. sep .. "test.lua"
-  local resultDir = (os.getenv("TEMP") or os.getenv("TMP") or ".") .. sep .. "deltachess_test_" .. tostring(math.random(100000, 999999))
+  local tmpBase = os.getenv("TEMP") or os.getenv("TMP") or (isWindows and "." or "/tmp")
+  local resultDir = tmpBase .. sep .. "deltachess_test_" .. tostring(math.random(100000, 999999))
   if isWindows then
     os.execute("mkdir " .. escapeshellarg(resultDir) .. " 2>nul")
   else
@@ -207,6 +267,12 @@ if totalWorkers > 1 and workerId == nil then
       if luaBin ~= "lua" then
         line = line .. 'set "LUA_BIN=' .. batStr(luaBin) .. '"\r\n'
       end
+      if #onlySlugs > 0 then
+        line = line .. 'set "TEST_ONLY_SLUGS=' .. batStr(table.concat(onlySlugs, ",")) .. '"\r\n'
+      end
+      if #ignoreSlugs > 0 then
+        line = line .. 'set "TEST_IGNORE_SLUGS=' .. batStr(table.concat(ignoreSlugs, ",")) .. '"\r\n'
+      end
       line = line .. 'cd /d "' .. batStr(projectRoot:gsub("/", sep)) .. '"\r\n'
         .. '"' .. batStr(luaBin:gsub("/", sep)) .. '" "' .. batStr(scriptFull:gsub("/", sep)) .. '"\r\n'
       local f = io.open(batPath, "wb")
@@ -227,6 +293,12 @@ if totalWorkers > 1 and workerId == nil then
         .. "export TEST_WORKERS=" .. totalWorkers .. "\n"
       if luaBin ~= "lua" then
         shContent = shContent .. "export LUA_BIN=\"" .. forShDoubleQuotedValue(luaBin) .. "\"\n"
+      end
+      if #onlySlugs > 0 then
+        shContent = shContent .. "export TEST_ONLY_SLUGS=\"" .. forShDoubleQuotedValue(table.concat(onlySlugs, ",")) .. "\"\n"
+      end
+      if #ignoreSlugs > 0 then
+        shContent = shContent .. "export TEST_IGNORE_SLUGS=\"" .. forShDoubleQuotedValue(table.concat(ignoreSlugs, ",")) .. "\"\n"
       end
       shContent = shContent .. "cd \"" .. forShDoubleQuotedValue(projectRoot) .. "\" && exec \""
         .. forShDoubleQuotedValue(luaBin) .. "\" \"" .. forShDoubleQuotedValue(scriptFull) .. "\"\n"

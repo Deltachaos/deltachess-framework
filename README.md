@@ -46,7 +46,8 @@ Engines register with **DeltaChess.Engines** and implement:
   - `:Elo(elo)` – optional. Requested difficulty. Default: average of engine's ELO range.
   - `:TimeLimitMs(ms)` – optional. Max time in ms. Default: 20000 (20 seconds).
   - `:OnComplete(cb)` – `function(result, err)`. Required before `Run()`. If the engine returns an illegal move, the runner calls `onComplete(nil, err)` with `err` an object `{ message = "illegal move", move = "<uci>" }`.
-  - `:Scheduler(fn)` – optional. `function(next)`. Default: call `next()` immediately.
+  - `:DelayFn(fn)` – optional. `function(next)`. Default: call `next()` immediately.
+  - `:LoopFn(fn)` – optional. `function(stepFn, doneFn)` loop driver for async iteration. Default: runs all steps synchronously.
   - `:Run()` – start calculation.
 
 ## Global registration (WoW addon compatible)
@@ -102,10 +103,10 @@ DeltaChess.EngineRunner.Create("beat_highest_piece")
         if err then return end
         -- use result.move
     end)
-    :Scheduler(function(next) C_Timer.After(0, next) end)
+    :DelayFn(function(next) C_Timer.After(0, next) end)
     :Run()
 ```
-Engines receive `yieldFn(next)` and call it when they want to yield; the scheduler runs `next()` on the next frame so the game stays responsive.
+Engines receive `yieldFn(next)` and call it when they want to yield; the delay function runs `next()` on the next frame so the game stays responsive.
 
 **CLI game (bin/play.lua):** Run from repo root. Engine vs itself or engine1 vs engine2, with optional ELOs:
 ```bash

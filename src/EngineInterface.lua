@@ -41,7 +41,7 @@ DeltaChess.Engines.defaultId = nil  -- No longer auto-set; default determined by
 --     Used to sort engines by efficiency (faster engines listed first).
 --     Return nil if unknown or not applicable.
 --
---   Calculate(state, loopFn, onComplete)
+--   Calculate(state, loopFn, stepFn, onComplete)
 --     state     - State table (see above). Use state.fen; never mutate state.
 --     loopFn    - function(stepFn, doneFn). Loop driver for async iteration.
 --                 stepFn() does one unit of work; returns false when done, truthy to continue.
@@ -49,6 +49,10 @@ DeltaChess.Engines.defaultId = nil  -- No longer auto-set; default determined by
 --                 The runner defers between steps (e.g. C_Timer.NewTicker in WoW) so
 --                 the call stack stays flat and the UI remains responsive.
 --                 Inside stepFn, check state.cancelled to detect abort requests.
+--     stepFn    - function(items). Deferred step executor provided by the runner.
+--                 Pass a single function to defer it via the runner's DelayFn,
+--                 or pass a list of functions to iterate them via the runner's LoopFn.
+--                 Errors are captured and forwarded to onComplete.
 --     onComplete - function(resultTable, err). Call when done. Do not return a result.
 --                  On success, err is nil and resultTable.move (string, UCI) is required.
 --                  Optional fields: .san, .ponder, .depth, .nodes, .score, .mate.

@@ -7,7 +7,7 @@ local Test = require("test")
 
 local Engines = DeltaChess.Engines
 
-Test.suite("EngineInterface")
+Test.suite("EngineInterface", "engineinterface")
 
 --------------------------------------------------------------------------------
 -- Helper Functions
