@@ -30,9 +30,7 @@ function M:GetEloRange()
 end
 
 function M:GetAverageCpuTime(elo)
-    local range = self:GetEloRange()
-    local t = (elo - range[1]) / math.max(1, range[2] - range[1])
-    return 200 + t * 2000 -- 200ms at ELO 1800 to 2200ms at ELO 2600
+    return 100
 end
 
 local function captureValue(pos, mv)
