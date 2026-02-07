@@ -285,4 +285,41 @@ function Test.runAll(dir)
   return Test.summary()
 end
 
+--------------------------------------------------------------------------------
+-- Engine helpers (integration tests)
+--------------------------------------------------------------------------------
+
+--- Get list of all registered engines, optionally filtered by ALLOWED_ENGINES environment variable.
+--- ALLOWED_ENGINES: comma-separated list of engine IDs to include (e.g. "garbochess,dumbgoblin").
+function Test.getEngineList()
+  if not _G.DeltaChess or not _G.DeltaChess.Engines then
+    return {}
+  end
+  local list = _G.DeltaChess.Engines:GetEngineList()
+  if not list or #list == 0 then return {} end
+  
+  -- Filter by ALLOWED_ENGINES if set
+  local allowedEnginesEnv = os.getenv("ALLOWED_ENGINES")
+  if allowedEnginesEnv and allowedEnginesEnv ~= "" then
+    local allowed = {}
+    for engineId in allowedEnginesEnv:gmatch("[^,]+") do
+      local trimmed = engineId:gsub("^%s+", ""):gsub("%s+$", ""):lower()
+      if trimmed ~= "" then
+        allowed[trimmed] = true
+      end
+    end
+    
+    local filtered = {}
+    for _, engine in ipairs(list) do
+      local engineId = (engine.id or ""):lower()
+      if allowed[engineId] then
+        table.insert(filtered, engine)
+      end
+    end
+    return filtered
+  end
+  
+  return list
+end
+
 return Test

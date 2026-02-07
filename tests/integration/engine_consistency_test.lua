@@ -20,13 +20,6 @@ local projectRoot = (testsDir and testsDir:match("(.*)[/\\]")) or dir
 local sep = package.config:sub(1, 1)
 local snapshotDir = projectRoot .. sep .. "tests" .. sep .. "integration" .. sep .. "__snapshot__"
 
--- All registered engines (id and display name)
-local function getEngineList()
-  local list = Engines:GetEngineList()
-  if not list or #list == 0 then return {} end
-  return list
-end
-
 Test.suite("EngineRunner consistency", "engine_consistency_integration")
 
 -- Sync loopFn: runs all steps in a tight while-loop. No stack growth.
@@ -409,7 +402,7 @@ end
 -- Default opts: engines use ply_limit and/or node_limit as they support (e.g. GarboChess uses ply, Sunfish uses nodes)
 local defaultOpts = { ply_limit = 2, node_limit = 1000 }
 
-local engineList = getEngineList()
+local engineList = Test.getEngineList()
 
 --------------------------------------------------------------------------------
 -- Each engine: all positions

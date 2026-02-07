@@ -7,8 +7,8 @@ on:
     branches: [main, master]
 
 jobs:
-  Test:
-    name: Test
+  test:
+    name: Test (non-engine-consistency)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,3 +21,26 @@ jobs:
 
       - name: Run tests
         run: TEST_IGNORE_SLUGS=engine_consistency_integration lua ./bin/test.lua
+
+  engine-consistency:
+    name: Engine Consistency (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        engine:
+          - dumbgoblin
+          - fruit21
+          - garbochess
+          - sunfish
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Lua
+        uses: leafo/gh-actions-lua@v9
+        with:
+          luaVersion: "5.4"
+          buildCache: false
+
+      - name: Run engine consistency tests for ${{ matrix.engine }}
+        run: ALLOWED_ENGINES=${{ matrix.engine }} lua ./bin/test.lua --only=engine_consistency_integration
