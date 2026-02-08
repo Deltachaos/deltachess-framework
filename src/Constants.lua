@@ -62,6 +62,7 @@ M.REASON_TIMEOUT = "timeout"
 M.REASON_ENGINE_ERROR = "engine_error"
 M.REASON_INVALID_MOVE = "invalid_move"
 M.REASON_RESIGNATION = "resignation"
+M.REASON_REMIS = "remis"
 
 --------------------------------------------------------------------------------
 -- Defaults

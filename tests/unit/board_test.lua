@@ -1064,3 +1064,141 @@ Test.test("Timeout: white loses on time without making a move after 6 seconds", 
   Test.assertEq(board:GetResult(), Constants.BLACK, "black wins on time")
   Test.assertEq(board:GetEndReason(), Constants.REASON_TIMEOUT, "reason is timeout")
 end)
+
+--------------------------------------------------------------------------------
+-- Timeout after Serialize/Deserialize (history roundtrip)
+--------------------------------------------------------------------------------
+
+Test.test("Timeout survives serialize/deserialize when side-to-move ran out", function()
+  -- White has 10s, makes move at 5s. Black has 10s, thinks and times out.
+  -- Simulate: endTime is set at the moment timeout is detected.
+  local board = Board.New()
+  board:StartGame(1000)
+  board:SetClock(Constants.COLOR.WHITE, 10)
+  board:SetClock(Constants.COLOR.BLACK, 10)
+  board:MakeMoveUci("e2e4", { timestamp = 1005 })
+  -- Black is to move. endTime at 1020 → black thought 15s on a 10s clock.
+  board:SetEndTime(1020)
+
+  -- Verify before serialization
+  Test.assertEq(board:GetEndReason(), Constants.REASON_TIMEOUT, "reason is timeout before serialize")
+  Test.assertEq(board:GetResult(), Constants.WHITE, "white wins before serialize")
+
+  -- Roundtrip through serialize/deserialize
+  local data = board:Serialize()
+  local restored = Board.Deserialize(data)
+  Test.assertNotNil(restored, "deserialized board exists")
+  Test.assertTrue(restored:IsEnded(), "game is ended after restore")
+  Test.assertEq(restored:GetEndReason(), Constants.REASON_TIMEOUT, "reason is timeout after restore")
+  Test.assertEq(restored:GetResult(), Constants.WHITE, "white wins after restore")
+end)
+
+Test.test("Timeout survives serialize/deserialize when non-moving side exceeded clock", function()
+  -- White has 10s, makes move at 15s (exceeded clock). Black to move.
+  local board = Board.New()
+  board:StartGame(1000)
+  board:SetClock(Constants.COLOR.WHITE, 10)
+  board:SetClock(Constants.COLOR.BLACK, 600)
+  board:MakeMoveUci("e2e4", { timestamp = 1015 })
+  board:SetEndTime(1016)
+
+  -- Verify before serialization
+  Test.assertEq(board:GetEndReason(), Constants.REASON_TIMEOUT, "reason is timeout before serialize")
+  Test.assertEq(board:GetResult(), Constants.BLACK, "black wins before serialize")
+
+  -- Roundtrip
+  local data = board:Serialize()
+  local restored = Board.Deserialize(data)
+  Test.assertNotNil(restored, "deserialized board exists")
+  Test.assertTrue(restored:IsEnded(), "game is ended after restore")
+  Test.assertEq(restored:GetEndReason(), Constants.REASON_TIMEOUT, "reason is timeout after restore")
+  Test.assertEq(restored:GetResult(), Constants.BLACK, "black wins after restore")
+end)
+
+Test.test("Remis by agreement survives serialize/deserialize (not mis-detected as timeout)", function()
+  -- Both sides have plenty of time, game ended by agreement (EndGame called).
+  local board = Board.New()
+  board:StartGame(1000)
+  board:SetClock(Constants.COLOR.WHITE, 600)
+  board:SetClock(Constants.COLOR.BLACK, 600)
+  board:MakeMoveUci("e2e4", { timestamp = 1005 })
+  board:MakeMoveUci("e7e5", { timestamp = 1010 })
+  board:EndGame(1015)  -- draw by agreement
+
+  Test.assertEq(board:GetEndReason(), Constants.REASON_REMIS, "reason is remis before serialize")
+  Test.assertEq(board:GetResult(), Constants.DRAWN, "result is draw before serialize")
+
+  -- Roundtrip
+  local data = board:Serialize()
+  local restored = Board.Deserialize(data)
+  Test.assertNotNil(restored, "deserialized board exists")
+  Test.assertTrue(restored:IsEnded(), "game is ended after restore")
+  Test.assertEq(restored:GetEndReason(), Constants.REASON_REMIS, "reason is remis after restore")
+  Test.assertEq(restored:GetResult(), Constants.DRAWN, "result is draw after restore")
+end)
+
+Test.test("Resignation survives serialize/deserialize (not mis-detected as timeout)", function()
+  local board = Board.New()
+  board:SetWhitePlayer("Alice")
+  board:SetBlackPlayer("Bob")
+  board:StartGame(1000)
+  board:SetClock(Constants.COLOR.WHITE, 600)
+  board:SetClock(Constants.COLOR.BLACK, 600)
+  board:MakeMoveUci("e2e4", { timestamp = 1005 })
+  board:Resign(Constants.COLOR.BLACK)
+
+  Test.assertEq(board:GetEndReason(), Constants.REASON_RESIGNATION, "reason is resignation before serialize")
+
+  -- Roundtrip
+  local data = board:Serialize()
+  local restored = Board.Deserialize(data)
+  Test.assertNotNil(restored, "deserialized board exists")
+  Test.assertTrue(restored:IsEnded(), "game is ended after restore")
+  Test.assertEq(restored:GetEndReason(), Constants.REASON_RESIGNATION, "reason is resignation after restore")
+  Test.assertEq(restored:GetResult(), Constants.WHITE, "white wins after restore")
+end)
+
+Test.test("Checkmate survives serialize/deserialize with clocks (not mis-detected as timeout)", function()
+  -- Scholar's mate: 1.e4 e5 2.Qh5 Nc6 3.Bc4 Nf6 4.Qxf7# — checkmate
+  local board = Board.New()
+  board:StartGame(1000)
+  board:SetClock(Constants.COLOR.WHITE, 600)
+  board:SetClock(Constants.COLOR.BLACK, 600)
+  board:MakeMoveUci("e2e4", { timestamp = 1005 })
+  board:MakeMoveUci("e7e5", { timestamp = 1010 })
+  board:MakeMoveUci("d1h5", { timestamp = 1015 })
+  board:MakeMoveUci("b8c6", { timestamp = 1020 })
+  board:MakeMoveUci("f1c4", { timestamp = 1025 })
+  board:MakeMoveUci("g8f6", { timestamp = 1030 })
+  board:MakeMoveUci("h5f7", { timestamp = 1035 })
+  board:SetEndTime(1036)
+
+  Test.assertEq(board:GetEndReason(), Constants.REASON_CHECKMATE, "reason is checkmate before serialize")
+  Test.assertEq(board:GetResult(), Constants.WHITE, "white wins before serialize")
+
+  -- Roundtrip
+  local data = board:Serialize()
+  local restored = Board.Deserialize(data)
+  Test.assertNotNil(restored, "deserialized board exists")
+  Test.assertTrue(restored:IsEnded(), "game is ended after restore")
+  Test.assertEq(restored:GetEndReason(), Constants.REASON_CHECKMATE, "reason is checkmate after restore")
+  Test.assertEq(restored:GetResult(), Constants.WHITE, "white wins after restore")
+end)
+
+Test.test("TimeLeft reflects final segment for ended game with _endTime", function()
+  -- White has 60s clock. Moves at +5s. Black has 60s, game ends at +25s (black thinking 20s).
+  local board = Board.New()
+  board:StartGame(1000)
+  board:SetClock(Constants.COLOR.WHITE, 60)
+  board:SetClock(Constants.COLOR.BLACK, 60)
+  board:MakeMoveUci("e2e4", { timestamp = 1005 })
+  board:SetEndTime(1025)
+
+  -- White used 5s, should have 55s left
+  local whiteLeft = board:TimeLeft(Constants.COLOR.WHITE, 1025)
+  Test.assertEq(whiteLeft, 55, "white has 55s left")
+
+  -- Black used 20s (1005 to 1025), should have 40s left
+  local blackLeft = board:TimeLeft(Constants.COLOR.BLACK, 1025)
+  Test.assertEq(blackLeft, 40, "black has 40s left")
+end)

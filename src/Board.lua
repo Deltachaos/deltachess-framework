@@ -548,10 +548,17 @@ end
 -- Game Status API
 --------------------------------------------------------------------------------
 
--- Internal: Check if clocks are active (game started, not ended/paused, at least one clock > 0)
-local function hasClocksActive(self)
-  return self._startTime and not self._endTime and not self._paused
+-- Internal: Check if clocks are configured (game started, at least one clock > 0).
+-- Does not check _endTime or _paused, so it works for ended/deserialized games too.
+local function hasClocks(self)
+  return self._startTime
     and ((self._clockWhite or 0) > 0 or (self._clockBlack or 0) > 0)
+end
+
+-- Internal: Check if clocks are actively ticking (game started, not ended/paused, at least one clock > 0).
+-- Used for the live re-check optimization when status is cached as RUNNING.
+local function hasClocksActive(self)
+  return hasClocks(self) and not self._endTime and not self._paused
 end
 
 -- Internal: Calculate and cache game status
@@ -614,10 +621,12 @@ local function calculateStatus(self)
   end
   
   -- Check timeout (clock ran out)
+  -- Uses hasClocks (not hasClocksActive) so timeout is detected even after the game
+  -- has ended and been restored from history (where _endTime is already set).
   -- Check the non-moving side first: their time is definitively known from completed
   -- moves only, so if they exceeded their clock it should be detected before checking
   -- the side-to-move whose remaining time includes the live current segment.
-  if hasClocksActive(self) then
+  if hasClocks(self) then
     local stmColor = (self.pos.stm == "w") and Constants.COLOR.WHITE or Constants.COLOR.BLACK
     local otherColor = (stmColor == Constants.COLOR.WHITE) and Constants.COLOR.BLACK or Constants.COLOR.WHITE
     local otherRemain = self:GetRemainingTime(otherColor)
@@ -634,6 +643,14 @@ local function calculateStatus(self)
       self._cachedReason = Constants.REASON_TIMEOUT
       return
     end
+  end
+  
+  -- If the game was explicitly ended but no specific reason found, it's a remis (draw by agreement)
+  if self._endTime then
+    self._cachedStatus = Constants.ENDED
+    self._cachedResult = Constants.DRAWN
+    self._cachedReason = Constants.REASON_REMIS
+    return
   end
   
   -- Game is still running
@@ -1121,11 +1138,12 @@ function Board:GetRemainingTime(color, currentTime)
     if moveColor == stmKey then numMovesByColor = numMovesByColor + 1 end
   end
   local used = getTimeUsedByColor(self, color)
-  -- Add current turn if game is active, not ended, not paused, and it's this player's turn
+  -- Add current/final turn segment: for live games count up to now, for ended games count up to _endTime.
+  -- This ensures timeout is still detectable after the game has ended and been restored from history.
   local now = currentTime
   if now == nil then now = Util.TimeNow() end
   if self._endTime and now > self._endTime then now = self._endTime end
-  if not self._endTime and not self._paused and self.pos and self.pos.stm == stmKey then
+  if not self._paused and self.pos and self.pos.stm == stmKey then
     local lastTs = (#moves > 0 and type(moves[#moves].timestamp) == "number") and moves[#moves].timestamp or self._startTime
     local segment = now - lastTs
     segment = segment - getPausedDurationBetween(self._pauseHistory or {}, lastTs, now)
@@ -1149,7 +1167,8 @@ function Board:TimeThinking(color, currentTime)
   local now = currentTime
   if now == nil then now = Util.TimeNow() end
   if self._endTime and now > self._endTime then now = self._endTime end
-  if not self._endTime and not self._paused and self.pos and self.pos.stm == stmKey then
+  -- Add current/final turn segment (same logic as GetRemainingTime).
+  if not self._paused and self.pos and self.pos.stm == stmKey then
     local lastTs = (#moves > 0 and type(moves[#moves].timestamp) == "number") and moves[#moves].timestamp or self._startTime
     local segment = now - lastTs
     segment = segment - getPausedDurationBetween(self._pauseHistory or {}, lastTs, now)
@@ -1253,6 +1272,7 @@ function Board:Resign(color)
   self._resignedColor = color
   self:EndGame()
 end
+
 
 --------------------------------------------------------------------------------
 -- Player API (whitePlayer / blackPlayer)
