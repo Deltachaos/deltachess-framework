@@ -358,7 +358,7 @@ end
 
 -- Single process or worker: run tests (workers run only their slice)
 print("=====================================")
-print("  DeltaChess Test Suite" .. (workerId and (" (worker " .. workerId .. "/" .. totalWorkers .. ")") or ""))
+print("  DeltaChess Test Suite" .. (workerId and (" (worker " .. (workerId + 1) .. "/" .. totalWorkers .. ")") or ""))
 print("=====================================")
 print("")
 
