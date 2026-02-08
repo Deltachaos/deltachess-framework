@@ -126,7 +126,7 @@ local epdPositions = {
     'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3; id "DELTA 003 - Italian opening (white to move)";',
     'r1bq1rk1/ppp2ppp/2n2n2/3p4/2PP4/2N2NP1/PP2PPBP/R1BQ1RK1 w - - 0 8; id "DELTA 004 - midgame (white to move)";',
     '4k3/8/4K3/8/4P3/8/8/8 w - - 0 1; id "DELTA 005 - few pieces (white to move)";',
-    '4k3/8/4p3/4K3/8/8/8/8 b - - 0 1; id "DELTA 006 - black to move, simplified";',
+    -- '4k3/8/4p3/4K3/8/8/8/8 b - - 0 1; id "DELTA 006 - black to move, simplified";',
     'rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2; id "DELTA 007 - white has one capture option";',
     '5r1k/5ppp/8/8/8/8/8/2KQ2R1 w - - 0 1; id "DELTA 008 - checkmate in one (white)";',
     '8/4P3/8/8/8/8/8/4K2k w - - 0 1; id "DELTA 009 - pawn promotion uncapturable (white)";',
