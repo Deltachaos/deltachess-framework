@@ -30,7 +30,7 @@ function M:GetEloRange()
 end
 
 function M:GetAverageCpuTime(elo)
-    return 100
+    return 200
 end
 
 local function captureValue(pos, mv)

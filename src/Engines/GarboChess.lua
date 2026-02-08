@@ -2104,9 +2104,14 @@ end
 
 function M:GetAverageCpuTime(elo)
     -- Estimated CPU time in ms based on ELO (deeper search at higher ELO)
+    -- Always faster than sunfish and fruit
+    -- Faster than zugzug at depth 4+, slower at depths 1-3
     local range = self:GetEloRange()
     local t = (elo - range[1]) / math.max(1, range[2] - range[1])
-    return 100 + t * 900  -- 100ms to 1000ms
+    -- At low ELO (depth 1-3): ~200ms (slower than zugzug at depths 1-3)
+    -- At high ELO (depth 4+): ~700ms (faster than zugzug at depth 4)
+    -- Always faster than sunfish/fruit
+    return 200 + t * 500  -- 200ms to 700ms
 end
 
 --- Map state.elo to search depth (weaker = shallower, stronger = deeper). Uses state.ply_limit when set.

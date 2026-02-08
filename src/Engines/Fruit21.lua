@@ -61,9 +61,26 @@ function M:GetEloRange()
 end
 
 function M:GetAverageCpuTime(elo)
+    -- Always slower than garbochess
+    -- Slower than sunfish until ~2000 nodes (sunfish ELO ~1543), then faster
     local range = self:GetEloRange()
     local t = (elo - range[1]) / math.max(1, range[2] - range[1])
-    return 200 + t * 2000 -- 200ms at ELO 1800 to 2200ms at ELO 2600
+    -- Depth: 2 + t * 8 = 2 to 10
+    -- At low ELO (depth 2-3): slower than sunfish (higher time)
+    -- At higher ELO (depth 4+): faster than sunfish (time increases less)
+    -- Always slower than garbochess
+    -- Sunfish at ~1543 ELO uses ~2000 nodes
+    -- At fruit ELO 1800 (minimum), should be slower than sunfish at equivalent effort
+    -- At fruit ELO ~2000+, fruit becomes faster than sunfish
+    if elo <= 2000 then
+        -- Low ELO (depth 2-3): fruit slower than sunfish
+        local fruitT = (elo - range[1]) / math.max(1, 2000 - range[1])
+        return 400 + fruitT * 150  -- 400ms to 550ms (slower than sunfish)
+    else
+        -- Higher ELO (depth 4+): fruit faster than sunfish
+        local fruitT = (elo - 2000) / math.max(1, range[2] - 2000)
+        return 550 + fruitT * 1450  -- 550ms to 2000ms (faster than sunfish at high ELO)
+    end
 end
 
 --- Map state.elo to search depth (ply). Uses state.ply_limit when explicitly set.

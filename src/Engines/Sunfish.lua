@@ -817,10 +817,22 @@ end
 
 function M:GetAverageCpuTime(elo)
     -- Estimate based on node count scaling with ELO
+    -- Faster than fruit until ~2000 nodes, then slower
+    -- Always slower than garbochess
     local range = self:GetEloRange()
     local t = (elo - range[1]) / math.max(1, range[2] - range[1])
-    -- At low ELO ~100ms, at high ELO ~500ms
-    return math.floor(100 + t * 400)
+    -- Node count: 500 + t * 3500 = 500 to 4000
+    -- At ~2000 nodes (t ~0.43, elo ~1543), fruit becomes faster
+    -- Below 2000 nodes: sunfish faster (lower time)
+    -- Above 2000 nodes: fruit faster (sunfish time increases more)
+    local nodeCount = 500 + t * 3500
+    if nodeCount < 2000 then
+        -- Below 2000 nodes: sunfish is faster, so lower time
+        return math.floor(250 + t * 250)  -- 250ms to 450ms
+    else
+        -- Above 2000 nodes: fruit is faster, so sunfish time increases more
+        return math.floor(450 + (t - 0.43) * 1300)  -- 450ms to 1300ms
+    end
 end
 
 function M:Calculate(state, loopFn, stepFn, onComplete)
