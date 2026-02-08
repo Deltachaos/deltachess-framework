@@ -71,6 +71,17 @@ function Test.assertTableEq(got, expected, msg)
 end
 
 --------------------------------------------------------------------------------
+-- Helpers
+--------------------------------------------------------------------------------
+
+--- Sleep for at least the given number of seconds (wall clock busy-wait).
+--- @param seconds number Minimum seconds to wait
+function Test.sleep(seconds)
+  local start = os.time()
+  while os.time() - start < seconds do end
+end
+
+--------------------------------------------------------------------------------
 -- Snapshot testing (one file per assertion; uses file.lua for io/dir)
 --------------------------------------------------------------------------------
 

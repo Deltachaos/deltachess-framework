@@ -654,6 +654,43 @@ Test.test("Resign, GetGameResult, GetResignedPlayer", function()
   Test.assertEq(board:GetResignedPlayer(), "Alice", "resigned player name")
 end)
 
+Test.test("Resign sets GetStatus, GetResult, and GetEndReason correctly", function()
+  -- White resigns
+  local board = Board.New()
+  board:SetWhitePlayer("Alice")
+  board:SetBlackPlayer("Bob")
+  board:StartGame(1000)
+  board:MakeMoveUci("e2e4")
+  board:MakeMoveUci("e7e5")
+  board:Resign(Constants.COLOR.WHITE)
+  Test.assertEq(board:GetStatus(), Constants.ENDED, "status ended after white resigns")
+  Test.assertEq(board:GetResult(), Constants.BLACK, "result is black wins")
+  Test.assertEq(board:GetEndReason(), Constants.REASON_RESIGNATION, "reason is resignation")
+  Test.assertTrue(board:IsEnded(), "IsEnded true")
+  Test.assertFalse(board:IsRunning(), "IsRunning false")
+
+  -- Black resigns
+  local board2 = Board.New()
+  board2:SetWhitePlayer("Alice")
+  board2:SetBlackPlayer("Bob")
+  board2:StartGame(1000)
+  board2:MakeMoveUci("d2d4")
+  board2:Resign(Constants.COLOR.BLACK)
+  Test.assertEq(board2:GetStatus(), Constants.ENDED, "status ended after black resigns")
+  Test.assertEq(board2:GetResult(), Constants.WHITE, "result is white wins")
+  Test.assertEq(board2:GetEndReason(), Constants.REASON_RESIGNATION, "reason is resignation")
+
+  -- Resign with no moves played
+  local board3 = Board.New()
+  board3:SetWhitePlayer("Alice")
+  board3:SetBlackPlayer("Bob")
+  board3:StartGame(1000)
+  board3:Resign(Constants.COLOR.BLACK)
+  Test.assertEq(board3:GetStatus(), Constants.ENDED, "status ended with no moves")
+  Test.assertEq(board3:GetResult(), Constants.WHITE, "white wins when black resigns immediately")
+  Test.assertEq(board3:GetEndReason(), Constants.REASON_RESIGNATION, "reason is resignation with no moves")
+end)
+
 --------------------------------------------------------------------------------
 -- Player API
 --------------------------------------------------------------------------------
@@ -919,4 +956,109 @@ Test.test("GetPGN and FromPGN: White/Black object stored as JSON when json avail
   local bp = restored:GetBlackPlayer()
   Test.assertEq(type(bp), "table", "Black player is table")
   Test.assertEq(bp.class, "computer", "Black class restored")
+end)
+
+--------------------------------------------------------------------------------
+-- Timeout (clock ran out) detection tests
+--------------------------------------------------------------------------------
+
+Test.test("GetStatus: ENDED when white's clock expired from completed moves", function()
+  local board = Board.New()
+  board:StartGame(1000)
+  board:SetClock(Constants.COLOR.WHITE, 10)
+  board:SetClock(Constants.COLOR.BLACK, 600)
+  -- White uses 15 seconds on a 10-second clock
+  board:MakeMoveUci("e2e4", { timestamp = 1015 })
+  -- Now it's black's turn; white already exceeded their time
+  Test.assertEq(board:GetStatus(), Constants.ENDED, "status should be ENDED when white's clock expired")
+  Test.assertEq(board:GetResult(), Constants.BLACK, "black wins on time")
+  Test.assertEq(board:GetEndReason(), Constants.REASON_TIMEOUT, "reason should be timeout")
+  Test.assertTrue(board:IsEnded(), "IsEnded should be true")
+  Test.assertFalse(board:IsRunning(), "IsRunning should be false")
+end)
+
+Test.test("GetStatus: ENDED when black's clock expired from completed moves", function()
+  local board = Board.New()
+  board:StartGame(1000)
+  board:SetClock(Constants.COLOR.WHITE, 600)
+  board:SetClock(Constants.COLOR.BLACK, 10)
+  board:MakeMoveUci("e2e4", { timestamp = 1005 })
+  -- Black uses 20 seconds on a 10-second clock
+  board:MakeMoveUci("e7e5", { timestamp = 1025 })
+  -- Now it's white's turn; black already exceeded their time
+  Test.assertEq(board:GetStatus(), Constants.ENDED, "status should be ENDED when black's clock expired")
+  Test.assertEq(board:GetResult(), Constants.WHITE, "white wins on time")
+  Test.assertEq(board:GetEndReason(), Constants.REASON_TIMEOUT, "reason should be timeout")
+end)
+
+Test.test("GetStatus: ENDED when side to move times out in real-time", function()
+  -- Game started far in the past with 30-second clocks
+  local board = Board.New()
+  board:StartGame(1000)
+  board:SetClock(Constants.COLOR.WHITE, 30)
+  board:SetClock(Constants.COLOR.BLACK, 30)
+  board:MakeMoveUci("e2e4", { timestamp = 1005 })
+  board:MakeMoveUci("e7e5", { timestamp = 1010 })
+  -- White's turn. Current time >> 1010, so white has long since exceeded 30s
+  Test.assertEq(board:GetStatus(), Constants.ENDED, "status should be ENDED")
+  Test.assertEq(board:GetResult(), Constants.BLACK, "black wins on time")
+  Test.assertEq(board:GetEndReason(), Constants.REASON_TIMEOUT, "reason should be timeout")
+end)
+
+Test.test("IsGameOver: returns true with timeout reason when clock expired", function()
+  local board = Board.New()
+  board:StartGame(1000)
+  board:SetClock(Constants.COLOR.WHITE, 10)
+  board:SetClock(Constants.COLOR.BLACK, 600)
+  board:MakeMoveUci("e2e4", { timestamp = 1015 })
+  local isOver, reason = board:IsGameOver()
+  Test.assertTrue(isOver, "game is over")
+  Test.assertEq(reason, Constants.REASON_TIMEOUT, "reason is timeout")
+end)
+
+Test.test("GetStatus: RUNNING when clocks have time remaining", function()
+  local board = Board.New()
+  local now = os.time()
+  board:StartGame(now)
+  board:SetClock(Constants.COLOR.WHITE, 600)
+  board:SetClock(Constants.COLOR.BLACK, 600)
+  board:MakeMoveUci("e2e4", { timestamp = now })
+  -- White used ~0 seconds; black's turn with 600 seconds
+  Test.assertEq(board:GetStatus(), Constants.RUNNING, "status should be RUNNING with time left")
+  Test.assertTrue(board:IsRunning(), "game should be running")
+  Test.assertFalse(board:IsEnded(), "game should not be ended")
+end)
+
+Test.test("GetStatus: RUNNING when no clocks configured (no timeout check)", function()
+  local board = Board.New()
+  board:StartGame(1000)
+  -- No clocks set (both default to 0)
+  board:MakeMoveUci("e2e4", { timestamp = 1015 })
+  Test.assertEq(board:GetStatus(), Constants.RUNNING, "status should be RUNNING without clocks")
+end)
+
+Test.test("Timeout: black loses on time after white moves and 6 seconds elapse", function()
+  local board = Board.New()
+  board:StartGame()
+  board:SetClock(Constants.COLOR.WHITE, 2)
+  board:SetClock(Constants.COLOR.BLACK, 2)
+  board:MakeMoveUci("e2e4")  -- white moves instantly, now it's black's turn
+  -- Wait 6 seconds so black's 5-second clock expires
+  Test.sleep(3)
+  Test.assertEq(board:GetStatus(), Constants.ENDED, "game should be ended")
+  Test.assertEq(board:GetResult(), Constants.WHITE, "white wins on time")
+  Test.assertEq(board:GetEndReason(), Constants.REASON_TIMEOUT, "reason is timeout")
+end)
+
+Test.test("Timeout: white loses on time without making a move after 6 seconds", function()
+  local board = Board.New()
+  board:StartGame()
+  board:SetClock(Constants.COLOR.WHITE, 2)
+  board:SetClock(Constants.COLOR.BLACK, 2)
+  -- No move made — white's clock is ticking
+  -- Wait 6 seconds so white's 5-second clock expires
+  Test.sleep(3)
+  Test.assertEq(board:GetStatus(), Constants.ENDED, "game should be ended")
+  Test.assertEq(board:GetResult(), Constants.BLACK, "black wins on time")
+  Test.assertEq(board:GetEndReason(), Constants.REASON_TIMEOUT, "reason is timeout")
 end)

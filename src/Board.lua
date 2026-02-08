@@ -548,9 +548,44 @@ end
 -- Game Status API
 --------------------------------------------------------------------------------
 
+-- Internal: Check if clocks are active (game started, not ended/paused, at least one clock > 0)
+local function hasClocksActive(self)
+  return self._startTime and not self._endTime and not self._paused
+    and ((self._clockWhite or 0) > 0 or (self._clockBlack or 0) > 0)
+end
+
 -- Internal: Calculate and cache game status
 local function calculateStatus(self)
+  -- Skip if cached, UNLESS status is RUNNING with active clocks (time-dependent, needs re-check)
   if self._cachedStatus then
+    if self._cachedStatus ~= Constants.RUNNING or not hasClocksActive(self) then
+      return
+    end
+    -- Re-check timeout only (position-based checks are still valid)
+    -- Check non-moving side first (definitive completed-move time)
+    local stmColor = (self.pos.stm == "w") and Constants.COLOR.WHITE or Constants.COLOR.BLACK
+    local otherColor = (stmColor == Constants.COLOR.WHITE) and Constants.COLOR.BLACK or Constants.COLOR.WHITE
+    local otherRemain = self:GetRemainingTime(otherColor)
+    if otherRemain ~= nil and otherRemain <= 0 then
+      self._cachedStatus = Constants.ENDED
+      self._cachedResult = (otherColor == Constants.COLOR.WHITE) and Constants.BLACK or Constants.WHITE
+      self._cachedReason = Constants.REASON_TIMEOUT
+    else
+      local stmRemain = self:GetRemainingTime(stmColor)
+      if stmRemain ~= nil and stmRemain <= 0 then
+        self._cachedStatus = Constants.ENDED
+        self._cachedResult = (stmColor == Constants.COLOR.WHITE) and Constants.BLACK or Constants.WHITE
+        self._cachedReason = Constants.REASON_TIMEOUT
+      end
+    end
+    return
+  end
+  
+  -- Check resignation
+  if self._resignedColor then
+    self._cachedStatus = Constants.ENDED
+    self._cachedResult = (self._resignedColor == Constants.COLOR.WHITE) and Constants.BLACK or Constants.WHITE
+    self._cachedReason = Constants.REASON_RESIGNATION
     return
   end
   
@@ -576,6 +611,29 @@ local function calculateStatus(self)
       self._cachedReason = Constants.REASON_STALEMATE
     end
     return
+  end
+  
+  -- Check timeout (clock ran out)
+  -- Check the non-moving side first: their time is definitively known from completed
+  -- moves only, so if they exceeded their clock it should be detected before checking
+  -- the side-to-move whose remaining time includes the live current segment.
+  if hasClocksActive(self) then
+    local stmColor = (self.pos.stm == "w") and Constants.COLOR.WHITE or Constants.COLOR.BLACK
+    local otherColor = (stmColor == Constants.COLOR.WHITE) and Constants.COLOR.BLACK or Constants.COLOR.WHITE
+    local otherRemain = self:GetRemainingTime(otherColor)
+    if otherRemain ~= nil and otherRemain <= 0 then
+      self._cachedStatus = Constants.ENDED
+      self._cachedResult = (otherColor == Constants.COLOR.WHITE) and Constants.BLACK or Constants.WHITE
+      self._cachedReason = Constants.REASON_TIMEOUT
+      return
+    end
+    local stmRemain = self:GetRemainingTime(stmColor)
+    if stmRemain ~= nil and stmRemain <= 0 then
+      self._cachedStatus = Constants.ENDED
+      self._cachedResult = (stmColor == Constants.COLOR.WHITE) and Constants.BLACK or Constants.WHITE
+      self._cachedReason = Constants.REASON_TIMEOUT
+      return
+    end
   end
   
   -- Game is still running
