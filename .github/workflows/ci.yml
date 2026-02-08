@@ -59,4 +59,4 @@ jobs:
           sudo apt-get install -y lua5.4
 
       - name: Run engine consistency tests for ${{ matrix.engine }}
-        run: TEST_WORKERS=1 ALLOWED_ENGINES=${{ matrix.engine }} TEST_ONLY_SLUGS=engine_consistency_integration lua5.4 ./bin/test.lua
+        run: ALLOWED_ENGINES=${{ matrix.engine }} TEST_ONLY_SLUGS=engine_consistency_integration lua5.4 ./bin/test.lua
