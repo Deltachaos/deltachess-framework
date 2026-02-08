@@ -962,14 +962,10 @@ end
 -- Game State Tracking API
 --------------------------------------------------------------------------------
 
---- Get the game status.
--- Derived from _endTime, _paused, and _startTime: ended iff endTime set, paused iff _paused, active iff startTime set, else nil.
--- @return string|nil Constants.STATUS_ENDED, STATUS_PAUSED, STATUS_ACTIVE, or nil
-function Board:GetGameStatus()
-  if self._endTime then return Constants.STATUS_ENDED end
-  if self._paused then return Constants.STATUS_PAUSED end
-  if self._startTime then return Constants.STATUS_ACTIVE end
-  return nil
+--- Check if the game is actively being played (started, running, not paused).
+-- @return boolean
+function Board:IsActive()
+  return self._startTime ~= nil and not self._paused and self:IsRunning()
 end
 
 --- Start the game: set start time and clear end time (and unpause).
@@ -1603,7 +1599,10 @@ function Board:Serialize()
     moves = movesCopy,
     gameMeta = gameMetaCopy,
     -- Native game state fields
-    gameStatus = self:GetGameStatus(),
+    gameStatus = self._endTime and Constants.STATUS_ENDED
+      or self._paused and Constants.STATUS_PAUSED
+      or self._startTime and Constants.STATUS_ACTIVE
+      or nil,
     startTime = self._startTime,
     endTime = self._endTime,
     paused = self._paused,

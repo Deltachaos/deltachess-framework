@@ -35,13 +35,12 @@ M.RUNNING = "running"  -- Game is still in progress (rules-based)
 M.ENDED = "ended"      -- Game has ended by rules (check GetResult for outcome)
 
 --------------------------------------------------------------------------------
--- Custom Game Status (from Board:GetGameStatus())
+-- Application-level Game Status (used in serialization and UI layer)
 --------------------------------------------------------------------------------
 
--- Custom game status for application-level state tracking
-M.STATUS_ACTIVE = "active"        -- Game is actively being played
-M.STATUS_PAUSED = "paused"        -- Game is paused
-M.STATUS_ENDED = "ended"          -- Game has ended
+M.STATUS_ACTIVE = "active"        -- Game is actively being played (see Board:IsActive())
+M.STATUS_PAUSED = "paused"        -- Game is paused (see Board:IsPaused())
+M.STATUS_ENDED = "ended"          -- Game has ended (see Board:IsEnded())
 
 --------------------------------------------------------------------------------
 -- Draw Reasons
