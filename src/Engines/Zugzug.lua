@@ -29,8 +29,8 @@ function M:GetAverageCpuTime(elo)
     -- depth 1: ~40ms, depth 2: ~150ms, depth 3: ~600ms, depth 4: ~2800ms
     -- At depth 4, zugzug becomes slower than garbochess at equivalent ELO
     if elo <= 400 then return 40 end       -- depth 1 (faster than garbochess)
-    if elo <= 700 then return 150 end      -- depth 2 (faster than garbochess)
-    if elo <= 850 then return 600 end      -- depth 3 (faster than garbochess)
+    if elo <= 700 then return 600 end      -- depth 2 (faster than garbochess)
+    if elo <= 850 then return 800 end      -- depth 3 (faster than garbochess)
     return 2800                            -- depth 4 (slower than garbochess at equivalent ELO)
 end
 

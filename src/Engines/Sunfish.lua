@@ -804,7 +804,7 @@ end
 -- Engine interface
 --------------------------------------------------------------------------------
 function M:GetEloRange()
-    return {1200, 2000}
+    return {600, 1500}
 end
 
 --- Node limit from state.node_limit when set, else from state.elo.
@@ -828,10 +828,10 @@ function M:GetAverageCpuTime(elo)
     local nodeCount = 500 + t * 3500
     if nodeCount < 2000 then
         -- Below 2000 nodes: sunfish is faster, so lower time
-        return math.floor(250 + t * 250)  -- 250ms to 450ms
+        return math.floor(400 + t * 250)  -- 250ms to 450ms
     else
         -- Above 2000 nodes: fruit is faster, so sunfish time increases more
-        return math.floor(450 + (t - 0.43) * 1300)  -- 450ms to 1300ms
+        return math.floor(600 + (t - 0.43) * 1800)  -- 450ms to 1300ms
     end
 end
 
