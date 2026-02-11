@@ -7,6 +7,7 @@ local Test = require("test")
 
 local Board = DeltaChess.Board
 local MoveGen = DeltaChess.MoveGen
+local Constants = DeltaChess.Constants
 
 Test.suite("Board", "board")
 
@@ -191,10 +192,100 @@ Test.test("HalfMoveClock: increments for piece moves", function()
 end)
 
 --------------------------------------------------------------------------------
--- Game Status API Tests
+-- Threefold Repetition Tests
 --------------------------------------------------------------------------------
 
-local Constants = DeltaChess.Constants
+Test.test("IsThreefoldRepetitionDrawPossible: false at start and after one move", function()
+  local board = Board.New()
+  Test.assertFalse(board:IsThreefoldRepetitionDrawPossible(), "not possible at start")
+  board:MakeMoveUci("g1f3")
+  Test.assertFalse(board:IsThreefoldRepetitionDrawPossible(), "not possible after one move")
+end)
+
+Test.test("IsThreefoldRepetitionDrawPossible: true when same position occurs 3 times", function()
+  -- Cycle Nf3 Nf6 Ng1 Ng8 returns to initial position. Do it twice: after 4 and 8 moves we're at start again.
+  -- So initial position occurs at 0, 4, 8 = 3 times.
+  local board = Board.New()
+  board:MakeMoveUci("g1f3")   -- 1
+  board:MakeMoveUci("g8f6")   -- 2
+  board:MakeMoveUci("f3g1")   -- 3
+  board:MakeMoveUci("f6g8")   -- 4  (back to initial)
+  board:MakeMoveUci("g1f3")   -- 5
+  board:MakeMoveUci("g8f6")   -- 6
+  board:MakeMoveUci("f3g1")   -- 7
+  board:MakeMoveUci("f6g8")   -- 8  (back to initial again)
+  Test.assertTrue(board:IsThreefoldRepetitionDrawPossible(), "threefold repetition possible after 8 moves")
+end)
+
+Test.test("IsThreefoldRepetitionDrawPossible: false when same position only twice", function()
+  local board = Board.New()
+  board:MakeMoveUci("g1f3")
+  board:MakeMoveUci("g8f6")
+  board:MakeMoveUci("f3g1")
+  board:MakeMoveUci("f6g8")
+  -- Current position is initial (occurred at 0 and 4) = 2 times only
+  Test.assertFalse(board:IsThreefoldRepetitionDrawPossible(), "only two occurrences of current position")
+end)
+
+Test.test("IsThreefoldRepetitionDrawPossible: preserved across Copy", function()
+  local board = Board.New()
+  for _ = 1, 2 do
+    board:MakeMoveUci("g1f3")
+    board:MakeMoveUci("g8f6")
+    board:MakeMoveUci("f3g1")
+    board:MakeMoveUci("f6g8")
+  end
+  Test.assertTrue(board:IsThreefoldRepetitionDrawPossible(), "board has threefold before copy")
+  local copy = board:Copy()
+  Test.assertTrue(copy:IsThreefoldRepetitionDrawPossible(), "copy also has threefold")
+end)
+
+--------------------------------------------------------------------------------
+-- Fivefold Repetition (automatic draw) Tests
+--------------------------------------------------------------------------------
+
+Test.test("GetStatus: RUNNING when same position 4 times (no automatic draw yet)", function()
+  -- Cycle Nf3 Nf6 Ng1 Ng8: initial occurs at 0, 4, 8. Need 4 occurrences = 12 moves (0,4,8,12).
+  local board = Board.New()
+  for _ = 1, 3 do
+    board:MakeMoveUci("g1f3")
+    board:MakeMoveUci("g8f6")
+    board:MakeMoveUci("f3g1")
+    board:MakeMoveUci("f6g8")
+  end
+  Test.assertEq(board:GetStatus(), Constants.RUNNING, "game still running at 4 repetitions")
+end)
+
+Test.test("GetStatus: ENDED and DRAWN at fivefold repetition", function()
+  -- Same position 5 times: initial at 0, 4, 8, 12, 16 = 4 full cycles (16 moves)
+  local board = Board.New()
+  for _ = 1, 4 do
+    board:MakeMoveUci("g1f3")
+    board:MakeMoveUci("g8f6")
+    board:MakeMoveUci("f3g1")
+    board:MakeMoveUci("f6g8")
+  end
+  Test.assertEq(board:GetStatus(), Constants.ENDED, "status ENDED by fivefold")
+  Test.assertEq(board:GetResult(), Constants.DRAWN, "result is DRAWN")
+  Test.assertEq(board:GetEndReason(), Constants.REASON_FIVEFOLD_REPETITION, "reason is fivefold_repetition")
+end)
+
+Test.test("IsGameOver: true with fivefold_repetition reason", function()
+  local board = Board.New()
+  for _ = 1, 4 do
+    board:MakeMoveUci("g1f3")
+    board:MakeMoveUci("g8f6")
+    board:MakeMoveUci("f3g1")
+    board:MakeMoveUci("f6g8")
+  end
+  local isOver, reason = board:IsGameOver()
+  Test.assertTrue(isOver, "game is over")
+  Test.assertEq(reason, Constants.REASON_FIVEFOLD_REPETITION, "reason is fivefold_repetition")
+end)
+
+--------------------------------------------------------------------------------
+-- Game Status API Tests
+--------------------------------------------------------------------------------
 
 Test.test("GetStatus: RUNNING for starting position", function()
   local board = Board.New()
