@@ -318,6 +318,19 @@ local function resultToPgn(result)
   return "*"
 end
 
+-- Format seconds as PGN %clk time: 0:MM:SS or H:MM:SS for hours
+local function formatClkTime(seconds)
+  if not seconds or seconds < 0 then return nil end
+  local s = math.floor(seconds)
+  local h = math.floor(s / 3600)
+  local m = math.floor((s % 3600) / 60)
+  local sec = s % 60
+  if h > 0 then
+    return ("%d:%02d:%02d"):format(h, m, sec)
+  end
+  return ("0:%02d:%02d"):format(m, sec)
+end
+
 --- Get full PGN string (tag pairs + movetext). Per https://en.wikipedia.org/wiki/Portable_Game_Notation
 -- Seven Tag Roster: Event, Site, Date, Round, White, Black, Result.
 -- Optional: FEN (if not start position), TimeControl. Non-standard data (e.g. clock after each move) in comments.
@@ -345,12 +358,6 @@ function Board:GetPGN()
     tags.EndTime = Util.Date(self._endTime, "%H:%M:%S")
   end
 
-  local fen = self:GetFen()
-  if fen ~= Constants.START_FEN then
-    tags.FEN = fen
-    tags.SetUp = "1"
-  end
-
   if self._startTime and (self:GetClock(Constants.COLOR.WHITE) or self:GetClock(Constants.COLOR.BLACK)) then
     local w = self:GetClock(Constants.COLOR.WHITE) or 0
     local b = self:GetClock(Constants.COLOR.BLACK) or 0
@@ -364,7 +371,7 @@ function Board:GetPGN()
   end
 
   local lines = {}
-  local tagOrder = { "Date", "White", "Black", "Result", "Time", "UTCTime", "EndTime", "FEN", "SetUp", "TimeControl" }
+  local tagOrder = { "Date", "White", "Black", "Result", "Time", "UTCTime", "EndTime", "TimeControl" }
   local seen = {}
   for _, tagName in ipairs(tagOrder) do
     local tagVal = tags[tagName]
@@ -396,9 +403,9 @@ function Board:GetPGN()
       local boardAfter = self:GetBoardAtIndex(i)
       if boardAfter then
         local cw = boardAfter:GetRemainingTime(Constants.COLOR.WHITE, wMove:GetTimestamp())
-        local cb = boardAfter:GetRemainingTime(Constants.COLOR.BLACK, wMove:GetTimestamp())
-        if cw ~= nil or cb ~= nil then
-          part = part .. " {[%clockW " .. tostring(cw or 0) .. "][%clockB " .. tostring(cb or 0) .. "]}"
+        if cw ~= nil then
+          local clk = formatClkTime(cw)
+          if clk then part = part .. " {[%clk " .. clk .. "]}" end
         end
       end
     end
@@ -407,10 +414,10 @@ function Board:GetPGN()
       if bMove and self._startTime and type(bMove:GetTimestamp()) == "number" then
         local boardAfter = self:GetBoardAtIndex(i + 1)
         if boardAfter then
-          local cw = boardAfter:GetRemainingTime(Constants.COLOR.WHITE, bMove:GetTimestamp())
           local cb = boardAfter:GetRemainingTime(Constants.COLOR.BLACK, bMove:GetTimestamp())
-          if cw ~= nil or cb ~= nil then
-            part = part .. " {[%clockW " .. tostring(cw or 0) .. "][%clockB " .. tostring(cb or 0) .. "]}"
+          if cb ~= nil then
+            local clk = formatClkTime(cb)
+            if clk then part = part .. " {[%clk " .. clk .. "]}" end
           end
         end
       end
@@ -1440,13 +1447,29 @@ local function extractComments(movetext)
   return comments, clean
 end
 
--- Parse [%clockW n][%clockB n] from comment string; return clockWhite, clockBlack (seconds) or nil.
-local function parseClockComment(comment)
+-- Parse clock from comment. Supports:
+-- [%clk H:MM:SS] or [%clk 0:MM:SS] (standard; moveIndex 1=white, 2=black -> return that side only)
+-- [%clockW n][%clockB n] (legacy; return both)
+-- moveIndex: 1-based SAN index (odd=white, even=black). Used for %clk. Optional for legacy.
+local function parseClockComment(comment, moveIndex)
   if not comment then return nil, nil end
   local cw = comment:match("%[%%clockW%s+(%d+)%]")
   local cb = comment:match("%[%%clockB%s+(%d+)%]")
   if cw or cb then
     return tonumber(cw), tonumber(cb)
+  end
+  -- Standard [%clk H:MM:SS] or [%clk 0:MM:SS]
+  local h, m, s = comment:match("%[%%clk%s+(%d+):(%d%d):(%d%d)%]")
+  if h and m and s then
+    local sec = tonumber(h) * 3600 + tonumber(m) * 60 + tonumber(s)
+    if moveIndex and sec then
+      if moveIndex % 2 == 1 then
+        return sec, nil
+      else
+        return nil, sec
+      end
+    end
+    return nil, nil
   end
   return nil, nil
 end
@@ -1468,7 +1491,7 @@ local function tokenizeMovetext(movetext)
 end
 
 --- Create a board from a PGN string. Restores position, moves, tags, and optional clock from comments.
--- Non-standard clock data in comments: {[%clockW n][%clockB n]} (remaining seconds after that move).
+-- Clock in comments: {[%clk 0:MM:SS]} (standard, one per move) or legacy {[%clockW n][%clockB n]} (seconds).
 -- @param pgn string PGN document (tag pairs + blank line + movetext)
 -- @return Board|nil, error message
 function M.FromPGN(pgn)
@@ -1552,9 +1575,11 @@ function M.FromPGN(pgn)
     if not pos then
       return nil, "position after move " .. i .. " invalid"
     end
-    local cw, cb = parseClockComment(comments[i])
-    if cw ~= nil or cb ~= nil then
+    local cw, cb = parseClockComment(comments[i], i)
+    if cw ~= nil then
       board:SetMoveMeta("clockWhite", cw)
+    end
+    if cb ~= nil then
       board:SetMoveMeta("clockBlack", cb)
     end
   end
