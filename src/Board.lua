@@ -715,11 +715,11 @@ local function calculateStatus(self)
     end
   end
   
-  -- If the game was explicitly ended but no specific reason found, it's a remis (draw by agreement)
+  -- If the game was explicitly ended (by agreement or claim): derive reason from position
   if self._endTime then
     self._cachedStatus = Constants.ENDED
     self._cachedResult = Constants.DRAWN
-    self._cachedReason = Constants.REASON_REMIS
+    self._cachedReason = self:IsThreefoldRepetitionDrawPossible() and Constants.REASON_THREEFOLD_REPETITION or Constants.REASON_REMIS
     return
   end
   
@@ -1069,6 +1069,7 @@ function Board:StartGame(timestamp)
 end
 
 --- End the game: set end time (and unpause).
+-- End reason is derived automatically (e.g. threefold repetition if applicable, else draw by agreement).
 -- @param timestamp number|nil Unix timestamp for end (default: current time)
 function Board:EndGame(timestamp)
   local t = timestamp or Util.TimeNow()
