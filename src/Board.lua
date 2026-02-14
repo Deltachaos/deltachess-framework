@@ -1355,7 +1355,9 @@ end
 
 local function playerName(p)
   if not p then return nil end
-  return type(p) == "string" and p or p.name
+  if type(p) == "string" then return p end
+  -- For table format (with class/engine info)
+  return p.name
 end
 
 local function playerClass(p)
