@@ -149,6 +149,37 @@ local function initBoardState(board)
   board._incrementBlack = 0
   -- Pause history: list of { pauseTime = number, unpauseTime = number } for computing elapsed time
   board._pauseHistory = {}
+  -- Position keys for threefold repetition: first 4 FEN fields (placement, stm, castling, ep) after each move
+  board._positionKeys = {}
+end
+
+-- Internal: Get repetition key (first 4 FEN fields) for the current position. Used for threefold repetition.
+-- FIDE: positions are the same if (1) same player has the move, (2) same pieces on same squares,
+-- (3) possible moves of all pieces are the same. (3) fails if en passant or castling rights differ
+-- between occurrences; the key uses placement, stm, castling, and ep so those are encoded.
+local function getRepetitionKey(board)
+  local fen = board:GetFen()
+  local parts = {}
+  for part in (fen or ""):gmatch("%S+") do
+    parts[#parts + 1] = part
+  end
+  if #parts < 4 then
+    return (fen or ""):match("^([^%s]+%s+[^%s]+%s+[^%s]+%s+[^%s]+)") or fen or ""
+  end
+  return parts[1] .. " " .. parts[2] .. " " .. (parts[3] or "-") .. " " .. (parts[4] or "-")
+end
+
+-- Internal: Rebuild _positionKeys from _startFen and moves (replay and collect keys).
+local function rebuildPositionKeys(board)
+  local startFen = board._startFen or Constants.START_FEN
+  local temp = M.FromFen(startFen)
+  for _, move in ipairs(board.moves) do
+    temp:MakeMoveUci(move.uci)
+  end
+  board._positionKeys = {}
+  for _, k in ipairs(temp._positionKeys) do
+    table.insert(board._positionKeys, k)
+  end
 end
 
 --- Create a new Board from FEN string (defaults to starting position).
@@ -164,6 +195,8 @@ function M.FromFen(fen)
   local board = setmetatable({}, Board)
   board.pos = pos
   initBoardState(board)
+  board._startFen = fen
+  board._positionKeys = { getRepetitionKey(board) }
   return board
 end
 
@@ -515,6 +548,28 @@ function Board:GetHalfMoveClock()
   return self.pos.half or 0
 end
 
+-- Internal: Return how many times the current position has occurred in the game (for repetition rules).
+local function getRepetitionCount(board)
+  local keys = board._positionKeys
+  if not keys or #keys == 0 then return 0 end
+  local currentKey = getRepetitionKey(board)
+  local count = 0
+  for i = 1, #keys do
+    if keys[i] == currentKey then count = count + 1 end
+  end
+  return count
+end
+
+--- Check if a draw by threefold repetition is possible (same position occurred at least 3 times).
+-- Intervening moves do not matter. The draw must be claimed by the player with the turn to move
+-- (either before making the move that would repeat for the third time, or after the position
+-- has just appeared for the third time). This method only reports whether the condition is met;
+-- it does not end the game or enforce who may claim.
+-- @return boolean true if the current position has occurred at least 3 times
+function Board:IsThreefoldRepetitionDrawPossible()
+  return getRepetitionCount(self) >= 3
+end
+
 --- Get the full-move number.
 -- @return number
 function Board:GetFullMoveNumber()
@@ -610,6 +665,14 @@ local function calculateStatus(self)
     self._cachedReason = Constants.REASON_FIFTY_MOVE
     return
   end
+
+  -- Fivefold repetition (FIDE 2014): same position 5 times (consecutive or not) is an immediate draw by the arbiter
+  if getRepetitionCount(self) >= 5 then
+    self._cachedStatus = Constants.ENDED
+    self._cachedResult = Constants.DRAWN
+    self._cachedReason = Constants.REASON_FIVEFOLD_REPETITION
+    return
+  end
   
   -- Check for no legal moves
   local legal = self:LegalMoves()
@@ -652,11 +715,11 @@ local function calculateStatus(self)
     end
   end
   
-  -- If the game was explicitly ended but no specific reason found, it's a remis (draw by agreement)
+  -- If the game was explicitly ended (by agreement or claim): derive reason from position
   if self._endTime then
     self._cachedStatus = Constants.ENDED
     self._cachedResult = Constants.DRAWN
-    self._cachedReason = Constants.REASON_REMIS
+    self._cachedReason = self:IsThreefoldRepetitionDrawPossible() and Constants.REASON_THREEFOLD_REPETITION or Constants.REASON_REMIS
     return
   end
   
@@ -807,6 +870,7 @@ function Board:MakeMove(mv, moveMeta)
   -- Update position first so we can check for check
   self.pos = newPos
   invalidateCache(self)
+  table.insert(self._positionKeys, getRepetitionKey(self))
   
   -- Check if move results in check
   local givesCheck = MoveGen.InCheck(newPos)
@@ -871,7 +935,10 @@ function Board:Copy()
   for k, v in pairs(self.gameMeta) do
     copy.gameMeta[k] = v
   end
-  
+
+  copy._startFen = self._startFen
+  rebuildPositionKeys(copy)
+
   -- Copy native game state fields (gameStatus/gameResult derived from times + _paused)
   copy._startTime = self._startTime
   copy._endTime = self._endTime
@@ -1002,6 +1069,7 @@ function Board:StartGame(timestamp)
 end
 
 --- End the game: set end time (and unpause).
+-- End reason is derived automatically (e.g. threefold repetition if applicable, else draw by agreement).
 -- @param timestamp number|nil Unix timestamp for end (default: current time)
 function Board:EndGame(timestamp)
   local t = timestamp or Util.TimeNow()
@@ -1287,7 +1355,9 @@ end
 
 local function playerName(p)
   if not p then return nil end
-  return type(p) == "string" and p or p.name
+  if type(p) == "string" then return p end
+  -- For table format (with class/engine info)
+  return p.name
 end
 
 local function playerClass(p)
@@ -1643,6 +1713,7 @@ function Board:Serialize()
     fen = self:GetFen(),
     moves = movesCopy,
     gameMeta = gameMetaCopy,
+    startFen = self._startFen or Constants.START_FEN,
     -- Native game state fields
     gameStatus = self._endTime and Constants.STATUS_ENDED
       or self._paused and Constants.STATUS_PAUSED
@@ -1704,6 +1775,9 @@ function M.Deserialize(data)
       board.gameMeta[k] = v
     end
   end
+
+  board._startFen = data.startFen or Constants.START_FEN
+  rebuildPositionKeys(board)
 
   -- Restore native game state fields
   board._startTime = data.startTime
