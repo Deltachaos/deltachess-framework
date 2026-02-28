@@ -197,13 +197,20 @@ local function Builder(engineId)
                             -- Handler returned false: propagate the error
                             originalOnComplete(nil, err)
                         else
-                            -- Handler did not return false: return a random legal move
-                            local randomMove = getRandomLegalMove()
-                            if randomMove then
-                                originalOnComplete({ move = randomMove, san = randomMove, fallback = true }, nil)
+                            -- Handler did not return false: return a random legal move (deferred to avoid "script ran too long")
+                            local function doFallback()
+                                local randomMove = getRandomLegalMove()
+                                if randomMove then
+                                    originalOnComplete({ move = randomMove, san = randomMove, fallback = true }, nil)
+                                else
+                                    -- No legal moves available (checkmate/stalemate)
+                                    originalOnComplete(nil, err)
+                                end
+                            end
+                            if C_Timer and C_Timer.After then
+                                C_Timer.After(1, doFallback)
                             else
-                                -- No legal moves available (checkmate/stalemate)
-                                originalOnComplete(nil, err)
+                                doFallback()
                             end
                         end
                         return
