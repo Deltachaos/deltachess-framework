@@ -582,6 +582,14 @@ function Board:LegalMoves()
   return MoveGen.LegalMoves(self.pos)
 end
 
+--- Get premove candidates for a color: moves that could become legal after the
+-- other side's next move. See MoveGen.SemiLegalMoves.
+-- @param color "w" or "b" (default: side to move)
+-- @return table of move objects
+function Board:SemiLegalMoves(color)
+  return MoveGen.SemiLegalMoves(self.pos, color)
+end
+
 --- Check if the current side to move is in check.
 -- @return boolean
 function Board:InCheck()

@@ -351,3 +351,89 @@ Test.test("Must block or capture when in check", function()
     Test.assertTrue(uci:sub(1,2) == "e1", "in check, only king moves should be legal: " .. uci)
   end
 end)
+
+--------------------------------------------------------------------------------
+-- Semi-legal moves (premoves)
+--------------------------------------------------------------------------------
+
+local function semiSet(fen, color)
+  local set = {}
+  for _, mv in ipairs(M.SemiLegalMoves(M.ParseFen(fen), color)) do
+    set[M.MoveToUci(mv)] = true
+  end
+  return set
+end
+
+-- For every reply the side to move can make, each legal move the other side has
+-- afterwards must already be in SemiLegalMoves. Otherwise a valid premove would
+-- be refused.
+Test.test("SemiLegalMoves: contains every move that becomes legal after any reply", function()
+  local fens = {
+    -- after 1.e4, white premoving
+    "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+    -- open middlegame, both sides can castle, captures available
+    "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R b KQkq - 0 5",
+    -- white pawn just double-stepped and can be taken en passant
+    "4k3/8/8/8/3pP3/8/2B5/R3K2R b KQ e3 0 1",
+    -- black premoving: promotions, castling, white can take on a8
+    "r3k2r/1P6/8/8/8/8/6p1/R3K2R w KQkq - 0 1",
+    -- pieces in contact, many recaptures
+    "r2q1rk1/ppp2ppp/2np1n2/2b1p1B1/2B1P1b1/2NP1N2/PPP2PPP/R2Q1RK1 w - - 0 8",
+  }
+  local checked = 0
+  for _, fen in ipairs(fens) do
+    local pos = M.ParseFen(fen)
+    local premover = (pos.stm == "w") and "b" or "w"
+    local semi = semiSet(fen, premover)
+    for _, reply in ipairs(M.LegalMoves(pos)) do
+      local after = M.MakeMove(pos, reply)
+      for _, mv in ipairs(M.LegalMoves(after)) do
+        local uci = M.MoveToUci(mv)
+        Test.assertTrue(semi[uci], fen .. ": after " .. M.MoveToUci(reply) .. ", " .. uci .. " is legal but was not a premove option")
+        checked = checked + 1
+      end
+    end
+  end
+  Test.assertTrue(checked > 1000, "expected to check many moves, checked " .. checked)
+end)
+
+Test.test("SemiLegalMoves: own pieces block sliders, enemy pieces don't", function()
+  -- White rook h2, own bishop d2, black knight h5; black to move
+  local s = semiSet("4k3/8/8/7n/8/8/3B3R/4K3 b - - 0 1", "w")
+  Test.assertTrue(s["h2h8"], "black knight on h5 can move away, so h8 is reachable")
+  Test.assertTrue(s["h2d2"], "own bishop square is a target (it may be captured)")
+  Test.assertFalse(s["h2c2"], "own bishop stays in the way")
+end)
+
+Test.test("SemiLegalMoves: pawn pushes and captures", function()
+  -- White pawns e2 (black knight on e3) and g2 (own knight on g3)
+  local s = semiSet("4k3/8/8/8/8/4n1N1/4P1P1/4K3 b - - 0 1", "w")
+  Test.assertTrue(s["e2e3"] and s["e2e4"], "enemy knight in front may move away")
+  Test.assertFalse(s["g2g3"] or s["g2g4"], "own knight in front blocks the pawn")
+  Test.assertTrue(s["g2f3"] and s["g2h3"], "diagonals are always premove targets")
+  Test.assertFalse(s["e2d1"] or s["e2e1"], "pawns never move backwards")
+end)
+
+Test.test("SemiLegalMoves: castling", function()
+  -- Black knight on b1 (may move), own bishop on g1 (stays)
+  local s = semiSet("4k3/8/8/8/8/8/8/Rn2K1BR b KQ - 0 1", "w")
+  Test.assertTrue(s["e1c1"], "enemy piece between king and rook may move away")
+  Test.assertFalse(s["e1g1"], "own bishop between king and rook blocks castling")
+  local none = semiSet("4k3/8/8/8/8/8/8/R3K2R b - - 0 1", "w")
+  Test.assertFalse(none["e1g1"] or none["e1c1"], "no castling without the right")
+end)
+
+Test.test("SemiLegalMoves: pawn that can be taken en passant doesn't block", function()
+  -- White bishop c2 looks through its own e4 pawn
+  local withEp = semiSet("4k3/8/8/8/3pP3/8/2B5/4K3 b - e3 0 1", "w")
+  Test.assertTrue(withEp["c2f5"], "d4xe3 en passant would clear e4")
+  local noEp = semiSet("4k3/8/8/8/3pP3/8/2B5/4K3 b - - 0 1", "w")
+  Test.assertFalse(noEp["c2f5"], "without en passant the pawn stays on e4")
+end)
+
+Test.test("SemiLegalMoves: never targets own king", function()
+  local s = semiSet("4k3/8/8/8/8/8/6N1/Q3K3 b - - 0 1", "w")
+  Test.assertFalse(s["g2e1"], "knight can't land on own king")
+  Test.assertTrue(s["a1d1"], "queen moves up to the king")
+  Test.assertFalse(s["a1e1"] or s["a1f1"], "queen can't take or pass own king")
+end)

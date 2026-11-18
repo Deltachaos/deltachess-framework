@@ -308,6 +308,121 @@ function M.LegalMoves(pos)
   return GenMoves(pos)
 end
 
+local KNIGHT_JUMPS = { {-2,-1},{-2,1},{-1,-2},{-1,2},{1,-2},{1,2},{2,-1},{2,1} }
+local KING_STEPS = { {1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1} }
+local ROOK_DIRS = { {1,0},{-1,0},{0,1},{0,-1} }
+local BISHOP_DIRS = { {1,1},{1,-1},{-1,1},{-1,-1} }
+
+--- Moves for `color` that could become legal after one move by the other side.
+-- Used for premoves, when the opponent's reply isn't known yet.
+--
+-- The opponent can move or capture their own pieces out of the way, but can't
+-- move ours. Our pieces can only be captured, which leaves an enemy piece on the
+-- square. So:
+--   * Enemy pieces never block: they may move away.
+--   * Our pieces block sliders and pawn pushes, but their square is still a
+--     valid target (we may recapture there). The one exception is our pawn
+--     that can be taken en passant, since that square may end up empty.
+--   * Our own king's square is never a target.
+--   * Pawn diagonals are always included (an enemy piece may land there).
+--   * Castling is included while the right exists and none of our pieces stand
+--     between king and rook. Checks are ignored.
+-- @param pos position from ParseFen
+-- @param color "w" or "b" (default: pos.stm)
+-- @return list of { from, to [, prom] [, castle] }
+function M.SemiLegalMoves(pos, color)
+  color = color or pos.stm
+  local white = (color == "w")
+  local board = pos.board
+  local ownKing = white and "K" or "k"
+  local moves = {}
+
+  -- Our pawn that the opponent may capture en passant (it just made a double step)
+  local epVictim
+  if pos.ep and pos.stm ~= color then
+    local epSq = M.UciToSq(pos.ep)
+    local sq = epSq and (epSq + (white and 8 or -8))
+    if sq and board[sq] == (white and "P" or "p") then epVictim = sq end
+  end
+
+  local function isOwn(sq)
+    local p = board[sq]
+    return p ~= EMPTY and IsWhite(p) == white and sq ~= epVictim
+  end
+
+  local function push(from, to, promo)
+    if promo then
+      for _, pc in ipairs({ "q", "r", "b", "n" }) do
+        table.insert(moves, { from = from, to = to, prom = white and pc:upper() or pc })
+      end
+    else
+      table.insert(moves, { from = from, to = to })
+    end
+  end
+
+  local function onBoard(r, f) return r >= 1 and r <= 8 and f >= 1 and f <= 8 end
+
+  for sq = 1, 64 do
+    local p = board[sq]
+    if p ~= EMPTY and IsWhite(p) == white then
+      local r, f = math.floor((sq - 1) / 8) + 1, (sq - 1) % 8 + 1
+      local kind = p:upper()
+      if kind == "P" then
+        local dir = white and 1 or -1
+        local promo = (r + dir) == (white and 8 or 1)
+        local one = sq + 8 * dir
+        if onBoard(r + dir, f) and not isOwn(one) and board[one] ~= ownKing then
+          push(sq, one, promo)
+          local two = sq + 16 * dir
+          if r == (white and 2 or 7) and not isOwn(two) and board[two] ~= ownKing then
+            push(sq, two)
+          end
+        end
+        for _, df in ipairs({ -1, 1 }) do
+          if onBoard(r + dir, f + df) then
+            local to = sq + 8 * dir + df
+            if board[to] ~= ownKing then push(sq, to, promo) end
+          end
+        end
+      elseif kind == "N" or kind == "K" then
+        for _, d in ipairs(kind == "N" and KNIGHT_JUMPS or KING_STEPS) do
+          local tr, tf = r + d[1], f + d[2]
+          if onBoard(tr, tf) then
+            local to = (tr - 1) * 8 + tf
+            if board[to] ~= ownKing then push(sq, to) end
+          end
+        end
+        if kind == "K" and sq == (white and 5 or 61) then
+          local rights = pos.castling or "-"
+          local function pathFree(a, b)
+            for s = a, b do if isOwn(s) then return false end end
+            return true
+          end
+          if rights:find(white and "K" or "k", 1, true) and pathFree(sq + 1, sq + 2) then
+            table.insert(moves, { from = sq, to = sq + 2, castle = true })
+          end
+          if rights:find(white and "Q" or "q", 1, true) and pathFree(sq - 3, sq - 1) then
+            table.insert(moves, { from = sq, to = sq - 2, castle = true })
+          end
+        end
+      else
+        local dirs = (kind == "R" and ROOK_DIRS) or (kind == "B" and BISHOP_DIRS) or KING_STEPS
+        for _, d in ipairs(dirs) do
+          for step = 1, 7 do
+            local tr, tf = r + step * d[1], f + step * d[2]
+            if not onBoard(tr, tf) then break end
+            local to = (tr - 1) * 8 + tf
+            if board[to] == ownKing then break end
+            push(sq, to)
+            if isOwn(to) then break end
+          end
+        end
+      end
+    end
+  end
+  return moves
+end
+
 function M.InCheck(pos)
   return InCheck(pos.board, pos.stm == "w")
 end
