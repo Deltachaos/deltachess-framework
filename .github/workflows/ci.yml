@@ -5,24 +5,41 @@ on:
   pull_request:
 
 jobs:
-  test:
-    name: Lua 5.1
+  package:
+    name: Package
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Install Lua 5.1
-        run: sudo apt-get update && sudo apt-get install -y lua5.1
       - name: Keep tests in the package
         run: sed -i '/^ignore:/,$d' .pkgmeta
       - uses: BigWigsMods/packager@v2
         with:
           args: -d
+      - name: Upload the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: .release/*.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  test:
+    name: Lua 5.1
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: package
+      - name: Install Lua 5.1
+        run: sudo apt-get update && sudo apt-get install -y lua5.1 unzip
       - name: Test the package
         run: |
           set -euo pipefail
-          zipfile=$(find .release -maxdepth 1 -type f -name '*.zip' ! -name '*nolib*' -print -quit)
+          zipfile=$(find package -maxdepth 1 -type f -name '*.zip' ! -name '*nolib*' -print -quit)
           test -n "$zipfile"
           rm -rf "${RUNNER_TEMP}/pkg"
           unzip -q "$zipfile" -d "${RUNNER_TEMP}/pkg"
@@ -31,48 +48,50 @@ jobs:
 
   discover-engines:
     name: Discover Engines
+    needs: package
     runs-on: ubuntu-latest
     outputs:
       engines: ${{ steps.list_engines.outputs.engines }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Lua
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y lua5.1
+      - uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: package
+      - name: Install Lua 5.1
+        run: sudo apt-get update && sudo apt-get install -y lua5.1 unzip
       - name: List available engines
         id: list_engines
         run: |
+          set -euo pipefail
+          zipfile=$(find package -maxdepth 1 -type f -name '*.zip' ! -name '*nolib*' -print -quit)
+          test -n "$zipfile"
+          rm -rf "${RUNNER_TEMP}/pkg"
+          unzip -q "$zipfile" -d "${RUNNER_TEMP}/pkg"
+          cd "${RUNNER_TEMP}/pkg/DeltachessFramework"
           ENGINES=$(lua5.1 bin/engines.lua)
-          echo "engines=$ENGINES" >> $GITHUB_OUTPUT
+          echo "engines=$ENGINES" >> "$GITHUB_OUTPUT"
           lua5.1 bin/engines.lua --check
 
   engine-consistency:
     name: Engine Consistency (${{ matrix.engine }})
-    runs-on: ubuntu-latest
-    needs: discover-engines
+    needs: [package, discover-engines]
     if: needs.discover-engines.outputs.engines != '[]'
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         engine: ${{ fromJson(needs.discover-engines.outputs.engines) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          fetch-depth: 0
-      - name: Set up Lua
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y lua5.1
-      - name: Keep tests in the package
-        run: sed -i '/^ignore:/,$d' .pkgmeta
-      - uses: BigWigsMods/packager@v2
-        with:
-          args: -d
+          name: package
+          path: package
+      - name: Install Lua 5.1
+        run: sudo apt-get update && sudo apt-get install -y lua5.1 unzip
       - name: Run engine consistency tests for ${{ matrix.engine }}
         run: |
           set -euo pipefail
-          zipfile=$(find .release -maxdepth 1 -type f -name '*.zip' ! -name '*nolib*' -print -quit)
+          zipfile=$(find package -maxdepth 1 -type f -name '*.zip' ! -name '*nolib*' -print -quit)
           test -n "$zipfile"
           rm -rf "${RUNNER_TEMP}/pkg"
           unzip -q "$zipfile" -d "${RUNNER_TEMP}/pkg"
