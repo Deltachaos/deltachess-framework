@@ -1,0 +1,8 @@
+## Interface: 11508, 11509, 16001, 20506, 30405, 38002, 40402, 50504, 120100, 120105, 120107
+## Title: DeltachessFramework
+## Notes: Stateless chess engines and move generation for WoW addons
+## Author: Deltachaos
+## Version: 1.0.0
+## LoadOnDemand: 1
+
+lib.xml

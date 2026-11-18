@@ -4,7 +4,7 @@
 ]]
 
 local Test = require("test")
-local Cache = require("Cache")
+local Cache = DeltaChess.Cache
 
 Test.suite("Cache", "cache")
 

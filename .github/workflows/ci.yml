@@ -2,24 +2,32 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
   pull_request:
-    branches: [main, master]
 
 jobs:
   test:
-    name: Test (non-engine-consistency)
+    name: Lua 5.1
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Lua
+        with:
+          fetch-depth: 0
+      - name: Install Lua 5.1
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - name: Keep tests in the package
+        run: sed -i '/^ignore:/,$d' .pkgmeta
+      - uses: BigWigsMods/packager@v2
+        with:
+          args: -d
+      - name: Test the package
         run: |
-          sudo apt-get update
-          sudo apt-get install -y lua5.4
-
-      - name: Run tests
-        run: TEST_IGNORE_SLUGS=engine_consistency_integration lua5.4 ./bin/test.lua
+          set -euo pipefail
+          zipfile=$(find .release -maxdepth 1 -type f -name '*.zip' ! -name '*nolib*' -print -quit)
+          test -n "$zipfile"
+          rm -rf "${RUNNER_TEMP}/pkg"
+          unzip -q "$zipfile" -d "${RUNNER_TEMP}/pkg"
+          cd "${RUNNER_TEMP}/pkg/DeltachessFramework"
+          TEST_IGNORE_SLUGS=engine_consistency_integration lua5.1 Libs/LibUnitWow/run.lua
 
   discover-engines:
     name: Discover Engines
@@ -28,18 +36,16 @@ jobs:
       engines: ${{ steps.list_engines.outputs.engines }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Lua
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.4
-
+          sudo apt-get install -y lua5.1
       - name: List available engines
         id: list_engines
         run: |
-          ENGINES=$(lua5.4 bin/engines.lua)
+          ENGINES=$(lua5.1 bin/engines.lua)
           echo "engines=$ENGINES" >> $GITHUB_OUTPUT
-          lua5.4 bin/engines.lua --check
+          lua5.1 bin/engines.lua --check
 
   engine-consistency:
     name: Engine Consistency (${{ matrix.engine }})
@@ -52,11 +58,23 @@ jobs:
         engine: ${{ fromJson(needs.discover-engines.outputs.engines) }}
     steps:
       - uses: actions/checkout@v4
-
+        with:
+          fetch-depth: 0
       - name: Set up Lua
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.4
-
+          sudo apt-get install -y lua5.1
+      - name: Keep tests in the package
+        run: sed -i '/^ignore:/,$d' .pkgmeta
+      - uses: BigWigsMods/packager@v2
+        with:
+          args: -d
       - name: Run engine consistency tests for ${{ matrix.engine }}
-        run: ALLOWED_ENGINES=${{ matrix.engine }} TEST_ONLY_SLUGS=engine_consistency_integration lua5.4 ./bin/test.lua
+        run: |
+          set -euo pipefail
+          zipfile=$(find .release -maxdepth 1 -type f -name '*.zip' ! -name '*nolib*' -print -quit)
+          test -n "$zipfile"
+          rm -rf "${RUNNER_TEMP}/pkg"
+          unzip -q "$zipfile" -d "${RUNNER_TEMP}/pkg"
+          cd "${RUNNER_TEMP}/pkg/DeltachessFramework"
+          ALLOWED_ENGINES=${{ matrix.engine }} TEST_ONLY_SLUGS=engine_consistency_integration lua5.1 Libs/LibUnitWow/run.lua tests/integration

@@ -26,7 +26,7 @@ git clone https://github.com/Deltachaos/deltachess-engine-framework.git
 cd deltachess-engine-framework
 
 # Run tests to verify installation
-lua bin/test.lua
+lua5.1 Libs/LibUnitWow/run.lua
 
 # Try a sample game
 lua bin/play.lua sunfish 1200
@@ -35,9 +35,8 @@ lua bin/play.lua sunfish 1200
 ### World of Warcraft Addon
 
 1. Copy the entire framework into your addon directory
-2. Set `DeltaChess.AddonPath` to your addon path before loading `init.lua`
-3. Include `init.lua` in your TOC file
-4. The framework will automatically load all modules using `loadfile()`
+2. Include `DeltachessFramework.toc` in your addon list
+3. The TOC loads `lib.xml`, which loads the libraries and engines in order
 
 See the [Delta Chess addon](https://github.com/Deltachaos/deltachess) for a complete integration example.
 
@@ -148,9 +147,7 @@ All functionality is registered on the global **DeltaChess** table:
 - `DeltaChess.EngineRunner` – `Create(engineId)` (builder)
 - `DeltaChess.Engines.BeatHighestPiece` – built-in engine (after load)
 
-**Single init file (e.g. World of Warcraft):** Use `lua/Init.lua` as the only script in your TOC. Before loading, set `DeltaChess.AddonPath` to the addon directory (e.g. `"Interface\\AddOns\\DeltaChess\\"`). Init will load the other Lua files via `loadfile` and register engines. If `AddonPath` is not set, Init only registers engines (assume other files were loaded by the TOC in order).
-
-**Load order** when using multiple TOC entries: `MoveGen.lua` → `EngineInterface.lua` → `Runner.lua` → `Engines/BeatHighestPiece.lua` → `Init.lua`.
+**World of Warcraft:** `DeltachessFramework.toc` loads `lib.xml`. That file loads the libraries, the framework, and the engines in order.
 
 ## Usage
 
@@ -170,7 +167,7 @@ Runner.Create("beat_highest_piece")
     :Run()
 ```
 
-**With global (after init.lua or TOC load):**
+**With global (after the TOC load):**
 ```lua
 local Runner = DeltaChess.EngineRunner
 Runner.Create("beat_highest_piece")
@@ -296,7 +293,7 @@ The framework includes four chess engines with different characteristics:
 
 ### Adding Custom Engines
 
-Add new engines in `src/Engines/` (with `.id`, `.name`, `GetEloRange`, `Calculate`) and load/register them in `init.lua`. See the included engines for implementation examples.
+Add new engines in `src/Engines/` (with `.id`, `.name`, `GetEloRange`, `Calculate`) and add the script to `lib.xml`. See the included engines for implementation examples.
 
 ## Testing
 
@@ -305,12 +302,12 @@ The framework includes comprehensive tests to ensure correctness and reliability
 ### Test Suite
 
 ```bash
-# Run all tests
-lua bin/test.lua
+# Run all tests except the engine snapshot suite
+TEST_IGNORE_SLUGS=engine_consistency_integration lua5.1 ../LibUnitWow/run.lua
 
-# Run specific test categories
-lua bin/test.lua unit           # Unit tests
-lua bin/test.lua integration    # Integration tests
+# Run one category
+lua5.1 ../LibUnitWow/run.lua tests/unit
+lua5.1 ../LibUnitWow/run.lua tests/integration
 ```
 
 ### Test Categories
@@ -380,11 +377,11 @@ See existing engines in `src/Engines/` for reference implementations.
 ## Layout
 
 ```
-init.lua           # Single entry: loadfile's all modules, registers engines (WoW addon)
+DeltachessFramework.toc  # Loads lib.xml
+lib.xml                  # Libraries and engines, in load order
 bin/
   play.lua         # CLI: engine vs itself or engine1 vs engine2 (optional ELOs)
   uci.lua          # UCI interface: ENGINE=<id> lua bin/uci.lua
-  test.lua         # Test runner
   benchmark.lua    # Performance benchmarking
   duel.lua         # Engine vs engine matches
   rate.lua         # ELO rating calculations
@@ -408,9 +405,8 @@ lib/
   fruit21.lua        # Fruit 2.1 core implementation
   json.lua           # JSON utilities
 tests/
-  test.lua           # Main test suite
-  unit/              # Unit tests
-  integration/       # Integration tests
+  unit/              # Unit tests (*_test.lua), run with LibUnitWow/run.lua
+  integration/       # Integration tests (*_test.lua)
 .github/workflows/
   ci.yml             # Continuous integration
 ```
@@ -470,7 +466,7 @@ These limitations are intentional design choices to keep the framework simple, p
 This should never happen! If it does:
 1. Check that you're using the latest version
 2. Verify the FEN string is valid
-3. Run the self-play tests: `lua bin/test.lua integration`
+3. Run the self-play tests: `lua5.1 ../LibUnitWow/run.lua tests/integration`
 4. Report a bug with the FEN and engine ID
 
 ### Calculation takes too long

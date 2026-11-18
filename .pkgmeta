@@ -1,0 +1,10 @@
+package-as: DeltachessFramework
+
+externals:
+  Libs/LibUnitWow:
+    url: https://github.com/Deltachaos/LibUnitWow
+    branch: main
+
+ignore:
+  - tests
+  - Libs/LibUnitWow

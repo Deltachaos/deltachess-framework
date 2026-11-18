@@ -1,1 +1,6 @@
 /.idea
+/.release/
+/Libs/*
+!Libs/bit.lua
+!Libs/json.lua
+!Libs/fruit21.lua

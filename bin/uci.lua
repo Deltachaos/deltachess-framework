@@ -20,22 +20,30 @@
     - quit: exit
 ]]
 
--- Get script directory and set up paths
-local scriptPath = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
-if not scriptPath or scriptPath == "" then scriptPath = "." end
-scriptPath = scriptPath:gsub("/", package.config:sub(1, 1))
-
+local source = debug.getinfo(1, "S").source
+if source:sub(1, 1) == "@" then source = source:sub(2) end
+local scriptDir = source:match("^(.*)[/\\][^/\\]+$") or "."
 local sep = package.config:sub(1, 1)
-local projectRoot = scriptPath .. sep .. ".." .. sep
-
--- Set up package paths
-package.path = projectRoot .. "lib" .. sep .. "?.lua;" ..
-               projectRoot .. "src/?.lua;" ..
-               projectRoot .. "tests/?.lua;" ..
-               package.path
-
--- Load DeltaChess modules
-require("init")
+local root = scriptDir .. sep .. ".."
+local unitDirs = {
+    root .. sep .. "Libs" .. sep .. "LibUnitWow",
+    root .. sep .. ".." .. sep .. "LibUnitWow",
+}
+local unitDir
+for i = 1, #unitDirs do
+    local handle = io.open(unitDirs[i] .. sep .. "test.lua", "r")
+    if handle then
+        handle:close()
+        unitDir = unitDirs[i]
+        break
+    end
+end
+if not unitDir then
+    io.write("LibUnitWow not found\n")
+    os.exit(1)
+end
+package.path = unitDir .. sep .. "?.lua;" .. package.path
+require("test").loadToc(root .. sep .. "DeltachessFramework.toc")
 
 -- Get engine ID from command-line argument or environment variable
 local engineId = arg[1] or os.getenv("ENGINE")

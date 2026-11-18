@@ -8,13 +8,30 @@
   -vv  display board after each move (ANSI in-place update when possible)
 ]]
 
-local scriptPath = debug.getinfo(1, "S").source:match("@?(.*/)")
-if not scriptPath then scriptPath = "./" end
-local projectRoot = scriptPath .. "../"
-package.path = projectRoot .. "src/?.lua;src/?/init.lua;lib/?.lua;?.lua;" .. (package.path or "")
-
-DeltaChess = DeltaChess or {}
-require("init")
+local source = debug.getinfo(1, "S").source
+if source:sub(1, 1) == "@" then source = source:sub(2) end
+local scriptDir = source:match("^(.*)[/\\][^/\\]+$") or "."
+local sep = package.config:sub(1, 1)
+local root = scriptDir .. sep .. ".."
+local unitDirs = {
+    root .. sep .. "Libs" .. sep .. "LibUnitWow",
+    root .. sep .. ".." .. sep .. "LibUnitWow",
+}
+local unitDir
+for i = 1, #unitDirs do
+    local handle = io.open(unitDirs[i] .. sep .. "test.lua", "r")
+    if handle then
+        handle:close()
+        unitDir = unitDirs[i]
+        break
+    end
+end
+if not unitDir then
+    io.write("LibUnitWow not found\n")
+    os.exit(1)
+end
+package.path = unitDir .. sep .. "?.lua;" .. package.path
+require("test").loadToc(root .. sep .. "DeltachessFramework.toc")
 
 local EngineDuel = DeltaChess.EngineDuel
 local Engines = DeltaChess.Engines
