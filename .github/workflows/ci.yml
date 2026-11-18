@@ -17,11 +17,18 @@ jobs:
       - uses: BigWigsMods/packager@v2
         with:
           args: -d
+      - name: Collect the package
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          zipfile=$(find .release -maxdepth 1 -type f -name '*.zip' ! -name '*nolib*' -print -quit)
+          test -n "$zipfile"
+          cp "$zipfile" dist/
       - name: Upload the package
         uses: actions/upload-artifact@v4
         with:
           name: package
-          path: .release/*.zip
+          path: dist/*.zip
           if-no-files-found: error
           retention-days: 1
 
