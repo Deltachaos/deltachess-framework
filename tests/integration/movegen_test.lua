@@ -4,6 +4,7 @@
 ]]
 
 local Test = require("test")
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 local M = DeltaChess.MoveGen
 
 Test.suite("MoveGen", "movegen")

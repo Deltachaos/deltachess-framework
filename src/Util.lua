@@ -3,7 +3,7 @@
   Registers globally: DeltaChess.Util
 ]]
 
-DeltaChess = DeltaChess or {}
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 local M = {}
 
 --------------------------------------------------------------------------------

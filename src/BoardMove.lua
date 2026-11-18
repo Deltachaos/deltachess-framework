@@ -3,6 +3,8 @@
 -- Part of EngineFramework
 --------------------------------------------------------------------------------
 
+local DeltaChess = LibStub("DeltachessFramework-1.0")
+
 local M = {}
 
 local BoardMove = {}
@@ -339,8 +341,6 @@ end
 -- Allow tostring() to work
 BoardMove.__tostring = BoardMove.ToString
 
--- Register globally for WoW addon access
-DeltaChess = DeltaChess or {}
 DeltaChess.BoardMove = M
 
 return M

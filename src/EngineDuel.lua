@@ -4,7 +4,7 @@
   Registers: DeltaChess.EngineDuel
 ]]
 
-DeltaChess = DeltaChess or {}
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 local Engines = DeltaChess.Engines
 local EngineRunner = DeltaChess.EngineRunner
 local Board = DeltaChess.Board

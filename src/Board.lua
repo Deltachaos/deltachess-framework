@@ -5,7 +5,7 @@
   Registers globally: DeltaChess.Board
 ]]
 
-DeltaChess = DeltaChess or {}
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 local MoveGen = DeltaChess.MoveGen
 local Constants = DeltaChess.Constants
 local BoardMove = DeltaChess.BoardMove

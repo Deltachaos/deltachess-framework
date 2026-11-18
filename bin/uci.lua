@@ -44,6 +44,7 @@ if not unitDir then
 end
 package.path = unitDir .. sep .. "?.lua;" .. package.path
 require("test").loadToc(root .. sep .. "DeltachessFramework.toc")
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 
 -- Get engine ID from command-line argument or environment variable
 local engineId = arg[1] or os.getenv("ENGINE")

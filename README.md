@@ -35,21 +35,18 @@ lua bin/play.lua sunfish 1200
 ### World of Warcraft Addon
 
 1. Copy the entire framework into your addon directory
-2. Include `DeltachessFramework.toc` in your addon list
-3. The TOC loads `lib.xml`, which loads the libraries and engines in order
+2. Include `DeltachessFramework.toc` in your addon list. The packager fetches LibStub.
+3. The TOC loads LibStub, then `lib.xml`
+4. Use `LibStub("DeltachessFramework-1.0")`
 
 See the [Delta Chess addon](https://github.com/Deltachaos/deltachess) for a complete integration example.
 
 ### As a Lua Module
 
+Load `DeltachessFramework.toc` (LibUnitWow does this outside WoW), then take the library from LibStub. Nothing is written into the global namespace.
+
 ```lua
--- Add to package.path
-package.path = "path/to/deltachess-framework/src/?.lua;" .. package.path
-
--- Load engines
-require("engines.init")
-
--- Use the framework
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 local Runner = DeltaChess.EngineRunner
 Runner.Create("sunfish")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
@@ -138,37 +135,20 @@ Engines register with **DeltaChess.Engines** and implement:
   - `:LoopFn(fn)` – optional. `function(stepFn, doneFn)` loop driver for async iteration. Default: runs all steps synchronously.
   - `:Run()` – start calculation.
 
-## Global registration (WoW addon compatible)
+## Library registration
 
-All functionality is registered on the global **DeltaChess** table:
+Modules attach themselves to the LibStub library `DeltachessFramework-1.0`. There is no global `DeltaChess` table.
 
 - `DeltaChess.Engines` – registry and engine interface
 - `DeltaChess.MoveGen` – FEN, legal moves, move validation
 - `DeltaChess.EngineRunner` – `Create(engineId)` (builder)
-- `DeltaChess.Engines.BeatHighestPiece` – built-in engine (after load)
 
-**World of Warcraft:** `DeltachessFramework.toc` loads `lib.xml`. That file loads the libraries, the framework, and the engines in order.
+**World of Warcraft:** `DeltachessFramework.toc` loads LibStub, then `lib.xml`.
 
 ## Usage
 
-**With require (standalone):**
 ```lua
-package.path = "lua/?.lua;lua/?/init.lua;" .. (package.path or "")
-require("engines.init")  -- register all engines
-
-local Runner = DeltaChess.EngineRunner
-Runner.Create("beat_highest_piece")
-    :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
-    :Elo(500)
-    :OnComplete(function(result, err)
-        if not err then -- use result.move
-        end
-    end)
-    :Run()
-```
-
-**With global (after the TOC load):**
-```lua
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 local Runner = DeltaChess.EngineRunner
 Runner.Create("beat_highest_piece")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
@@ -182,6 +162,7 @@ Runner.Create("beat_highest_piece")
 
 **World of Warcraft (async with C_Timer.After):**
 ```lua
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 DeltaChess.EngineRunner.Create("beat_highest_piece")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     :Elo(500)
@@ -249,11 +230,8 @@ quit
 ## Quick Start
 
 ```lua
--- Load the framework
-package.path = "src/?.lua;" .. package.path
-require("engines.init")
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 
--- Create a calculation
 DeltaChess.EngineRunner.Create("sunfish")
     :Fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1")
     :Elo(1200)  -- Intermediate difficulty

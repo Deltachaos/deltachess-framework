@@ -3,7 +3,7 @@
   Deterministic (no randomness). Uses DeltaChess.MoveGen. Registers globally: DeltaChess.Engines.BeatHighestPiece
 ]]
 
-DeltaChess = DeltaChess or {}
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 DeltaChess.Engines = DeltaChess.Engines or {}
 DeltaChess.Engines.Registry = DeltaChess.Engines.Registry or {}
 

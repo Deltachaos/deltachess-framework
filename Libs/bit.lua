@@ -46,7 +46,7 @@ end)()
 
 local libBit = _G.bit or bit32 or bit or bitPolyfill
 
-DeltaChess = DeltaChess or {}
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 DeltaChess.LibBitPolyfill = bitPolyfill
 DeltaChess.LibBit = libBit
 

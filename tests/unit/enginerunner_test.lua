@@ -4,8 +4,8 @@
 ]]
 
 local Test = require("test")
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 
--- Ensure DeltaChess modules are loaded
 local MoveGen = DeltaChess.MoveGen
 local Engines = DeltaChess.Engines
 local EngineRunner = DeltaChess.EngineRunner

@@ -22,6 +22,8 @@
 
 -- colour.h
 
+local DeltaChess = LibStub("DeltachessFramework-1.0")
+
 local function CreateEngine()
 
 local bit = DeltaChess.LibBit
@@ -15765,7 +15767,6 @@ end
 
 local Fruit21 = CreateEngine()
 
-DeltaChess = DeltaChess or {}
 DeltaChess.LibFruit21 = Fruit21
 
 return Fruit21

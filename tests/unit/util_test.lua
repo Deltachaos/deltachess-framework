@@ -4,6 +4,7 @@
 ]]
 
 local Test = require("test")
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 
 local Util = DeltaChess.Util
 
@@ -445,4 +446,117 @@ Test.test("EloToNodes: min/max elo give bounds", function()
   local range = { 1200, 2000 }
   Test.assertEq(Util.EloToNodes(1200, range, 2000, 20000), 2000, "Min ELO gives 2000 nodes")
   Test.assertEq(Util.EloToNodes(2000, range, 2000, 20000), 20000, "Max ELO gives 20000 nodes")
+end)
+
+--------------------------------------------------------------------------------
+-- Base64Encode / Base64Decode
+--------------------------------------------------------------------------------
+
+Test.test("Base64Encode: empty string", function()
+  Test.assertEq(Util.Base64Encode(""), "", "Empty input stays empty")
+end)
+
+Test.test("Base64Encode: padding for each remainder", function()
+  Test.assertEq(Util.Base64Encode("f"), "Zg==", "One byte uses ==")
+  Test.assertEq(Util.Base64Encode("fo"), "Zm8=", "Two bytes use =")
+  Test.assertEq(Util.Base64Encode("foo"), "Zm9v", "Three bytes need no padding")
+  Test.assertEq(Util.Base64Encode("foobar"), "Zm9vYmFy", "Known vector")
+end)
+
+Test.test("Base64Encode: bytes outside ASCII", function()
+  Test.assertEq(Util.Base64Encode(string.char(0, 255, 16)), "AP8Q", "Zero and high bytes")
+end)
+
+Test.test("Base64Decode: known vectors", function()
+  Test.assertEq(Util.Base64Decode(""), "", "Empty input")
+  Test.assertEq(Util.Base64Decode("Zg=="), "f", "One byte")
+  Test.assertEq(Util.Base64Decode("Zm8="), "fo", "Two bytes")
+  Test.assertEq(Util.Base64Decode("Zm9v"), "foo", "Three bytes")
+  Test.assertEq(Util.Base64Decode("Zm9vYmFy"), "foobar", "Known vector")
+  Test.assertEq(Util.Base64Decode("AP8Q"), string.char(0, 255, 16), "Zero and high bytes")
+end)
+
+Test.test("Base64Decode: ignores characters outside the alphabet", function()
+  Test.assertEq(Util.Base64Decode("Zg==\n !!"), "f", "Whitespace and junk are stripped")
+end)
+
+Test.test("Base64Encode and Base64Decode: roundtrip", function()
+  local samples = { "", "a", "ab", "abc", "hello world", string.char(0, 1, 2, 127, 128, 255) }
+  for i = 1, #samples do
+    Test.assertEq(Util.Base64Decode(Util.Base64Encode(samples[i])), samples[i], "Roundtrip sample " .. i)
+  end
+end)
+
+--------------------------------------------------------------------------------
+-- SerializeJSON / DeserializeJSON
+--------------------------------------------------------------------------------
+
+Test.test("SerializeJSON: primitives", function()
+  Test.assertEq(Util.SerializeJSON(nil), "null", "nil becomes null")
+  Test.assertEq(Util.SerializeJSON(true), "true", "true")
+  Test.assertEq(Util.SerializeJSON(false), "false", "false")
+  Test.assertEq(Util.SerializeJSON(42), "42", "integer")
+  Test.assertEq(Util.SerializeJSON("hi"), '"hi"', "string")
+end)
+
+Test.test("SerializeJSON: tables", function()
+  Test.assertEq(Util.SerializeJSON({}), "[]", "Empty table is an array")
+  Test.assertEq(Util.SerializeJSON({ 1, 2, 3 }), "[1,2,3]", "Array")
+  Test.assertEq(Util.SerializeJSON({ a = 1 }), '{"a":1}', "Object")
+end)
+
+Test.test("SerializeJSON: rejects values JSON cannot represent", function()
+  local encoded, err = Util.SerializeJSON(function() end)
+  Test.assertNil(encoded, "Function is not encoded")
+  Test.assertNotNil(err, "Function returns an error")
+
+  encoded, err = Util.SerializeJSON({ [1] = "a", [3] = "c" })
+  Test.assertNil(encoded, "Sparse array is not encoded")
+  Test.assertNotNil(err, "Sparse array returns an error")
+
+  local loop = {}
+  loop.self = loop
+  encoded, err = Util.SerializeJSON(loop)
+  Test.assertNil(encoded, "Circular table is not encoded")
+  Test.assertNotNil(err, "Circular table returns an error")
+end)
+
+Test.test("DeserializeJSON: rejects a non-string", function()
+  local value, err = Util.DeserializeJSON(42)
+  Test.assertNil(value, "Number is not decoded")
+  Test.assertEq(err, "source must be string", "Error names the expected type")
+end)
+
+Test.test("DeserializeJSON: rejects invalid JSON", function()
+  local value, err = Util.DeserializeJSON("{")
+  Test.assertNil(value, "Broken JSON is not decoded")
+  Test.assertNotNil(err, "Broken JSON returns an error")
+end)
+
+Test.test("DeserializeJSON: primitives and tables", function()
+  local value, err = Util.DeserializeJSON("null")
+  Test.assertNil(value, "null becomes nil")
+  Test.assertNil(err, "null is valid JSON")
+  Test.assertEq(Util.DeserializeJSON("true"), true, "true")
+  Test.assertEq(Util.DeserializeJSON("42"), 42, "number")
+  Test.assertEq(Util.DeserializeJSON('"hi"'), "hi", "string")
+  Test.assertTableEq(Util.DeserializeJSON("[1,2,3]"), { 1, 2, 3 }, "Array")
+  Test.assertTableEq(Util.DeserializeJSON('{"a":1}'), { a = 1 }, "Object")
+end)
+
+Test.test("SerializeJSON and DeserializeJSON: roundtrip", function()
+  local value = {
+    name = "white",
+    elo = 1500,
+    moves = { "e2e4", "e7e5" },
+    running = true,
+  }
+  local encoded, encodeErr = Util.SerializeJSON(value)
+  Test.assertNil(encodeErr, "Value encodes")
+  local decoded, decodeErr = Util.DeserializeJSON(encoded)
+  Test.assertNil(decodeErr, "Value decodes")
+  Test.assertEq(decoded.name, "white", "String field")
+  Test.assertEq(decoded.elo, 1500, "Number field")
+  Test.assertEq(decoded.running, true, "Boolean field")
+  Test.assertTableEq(decoded.moves, { "e2e4", "e7e5" }, "Nested array")
 end)

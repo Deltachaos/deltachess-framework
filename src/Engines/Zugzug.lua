@@ -1,7 +1,7 @@
 -- ZugzugEngine.lua - Alpha-beta minimax chess engine
 -- Implements the DeltaChess engine interface for pluggable AI.
 
-DeltaChess = DeltaChess or {}
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 DeltaChess.Engines = DeltaChess.Engines or {}
 DeltaChess.Engines.Registry = DeltaChess.Engines.Registry or {}
 

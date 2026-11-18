@@ -384,7 +384,7 @@ function json.decode(str)
   return res
 end
 
-DeltaChess = DeltaChess or {}
-DeltaChess.JSON = json
+local DeltaChess = LibStub("DeltachessFramework-1.0")
+DeltaChess.LibJSON = json
 
 return json

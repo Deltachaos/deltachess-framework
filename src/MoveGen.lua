@@ -5,7 +5,7 @@
   Registers globally: DeltaChess.MoveGen
 ]]
 
-DeltaChess = DeltaChess or {}
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 local M = {}
 
 local EMPTY = "."

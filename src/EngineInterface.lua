@@ -1,7 +1,7 @@
 -- EngineInterface.lua - Chess engine interface and registry
 -- Plug in different chess engines by implementing the interface below.
 
-DeltaChess = DeltaChess or {}
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 DeltaChess.Engines = DeltaChess.Engines or {}
 DeltaChess.Engines.Registry = DeltaChess.Engines.Registry or {}
 DeltaChess.Engines.defaultId = nil  -- No longer auto-set; default determined by highest ELO engine

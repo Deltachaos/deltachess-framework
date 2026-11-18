@@ -32,6 +32,7 @@ if not unitDir then
 end
 package.path = unitDir .. sep .. "?.lua;" .. package.path
 require("test").loadToc(root .. sep .. "DeltachessFramework.toc")
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 
 local EngineDuel = DeltaChess.EngineDuel
 local Engines = DeltaChess.Engines

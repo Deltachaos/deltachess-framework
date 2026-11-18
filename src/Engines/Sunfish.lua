@@ -6,7 +6,7 @@
   Registers globally: DeltaChess.Engines.Registry.sunfish
 ]]
 
-DeltaChess = DeltaChess or {}
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 DeltaChess.Engines = DeltaChess.Engines or {}
 DeltaChess.Engines.Registry = DeltaChess.Engines.Registry or {}
 

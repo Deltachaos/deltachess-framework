@@ -4,6 +4,7 @@
 ]]
 
 local Test = require("test")
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 
 local Board = DeltaChess.Board
 local MoveGen = DeltaChess.MoveGen
@@ -943,7 +944,6 @@ Test.test("GetPGN: White/Black as string unchanged", function()
 end)
 
 Test.test("GetPGN and FromPGN: White/Black object stored as JSON when json available", function()
-  if not _G.json then return end
   local board = Board.New()
   board:SetWhitePlayer("Human")
   board:SetBlackPlayer({ name = "Engine", class = "computer" })

@@ -4,6 +4,7 @@
 ]]
 
 local Test = require("test")
+local DeltaChess = LibStub("DeltachessFramework-1.0")
 
 local BoardMove = DeltaChess.BoardMove
 local Board = DeltaChess.Board

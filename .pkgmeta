@@ -1,6 +1,10 @@
 package-as: DeltachessFramework
 
 externals:
+  Libs/LibStub:
+    url: https://github.com/WoWUIDev/Ace3
+    branch: master
+    path: LibStub
   Libs/LibUnitWow:
     url: https://github.com/Deltachaos/LibUnitWow
     branch: main
