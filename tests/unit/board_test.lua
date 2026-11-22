@@ -1202,3 +1202,38 @@ Test.test("TimeLeft reflects final segment for ended game with _endTime", functi
   local blackLeft = board:TimeLeft(Constants.COLOR.BLACK, 1025)
   Test.assertEq(blackLeft, 40, "black has 40s left")
 end)
+
+--------------------------------------------------------------------------------
+-- Move durations
+--------------------------------------------------------------------------------
+
+-- 1.e4 after 3.5s, 1...e5 after 0.75s, then 2.Nf3 after 15.75s of which 10s paused
+local function timedBoard()
+  local board = Board.New()
+  board:StartGame(1000)
+  board:MakeMoveUci("e2e4", { timestamp = 1003.5 })
+  board:MakeMoveUci("e7e5", { timestamp = 1004.25 })
+  board._pauseHistory = { { pauseTime = 1005, unpauseTime = 1015 } }
+  board:MakeMoveUci("g1f3", { timestamp = 1020 })
+  return board
+end
+
+Test.test("GetMoveDurations: seconds per move, paused time left out", function()
+  local d = timedBoard():GetMoveDurations()
+  Test.assertEq(#d, 3, "one duration per move")
+  Test.assertEq(d[1], 3.5, "first move counts from the game start")
+  Test.assertEq(d[2], 0.75, "fractions are kept")
+  Test.assertEq(d[3], 5.75, "the 10 second pause is not counted")
+end)
+
+Test.test("GetMoveDurations: clock time adds up to the per-move times", function()
+  local board = timedBoard()
+  Test.assertEq(board:TimeThinking(Constants.COLOR.WHITE, 1020), 3.5 + 5.75, "white")
+  Test.assertEq(board:TimeThinking(Constants.COLOR.BLACK, 1020), 0.75, "black")
+end)
+
+Test.test("GetMoveDurations: zeros without a start time", function()
+  local board = Board.New()
+  board:MakeMoveUci("e2e4", { timestamp = 1003 })
+  Test.assertEq(board:GetMoveDurations()[1], 0)
+end)

@@ -560,3 +560,48 @@ Test.test("SerializeJSON and DeserializeJSON: roundtrip", function()
   Test.assertEq(decoded.running, true, "Boolean field")
   Test.assertTableEq(decoded.moves, { "e2e4", "e7e5" }, "Nested array")
 end)
+
+--------------------------------------------------------------------------------
+-- TimeNow in WoW (time() + GetTime())
+--------------------------------------------------------------------------------
+
+-- Load a fresh copy of Util.lua that sees fake WoW clock functions instead of os.time
+local function utilWithClock(clock)
+  local lib = {}
+  local env = {
+    LibStub = function() return lib end,
+    os = false,
+    time = function() return clock.time end,
+    GetTime = function() return clock.getTime end,
+  }
+  env._G = env
+  setmetatable(env, { __index = _G })
+  Test.load((Test.root or ".") .. "/src/Util.lua", env)
+  return lib.Util
+end
+
+local function near(a, b) return math.abs(a - b) < 1e-9 end
+
+Test.test("TimeNow: tenths of a second in WoW", function()
+  local clock = { time = 100, getTime = 50.25 }
+  local U = utilWithClock(clock)
+  local t1 = U.TimeNow()
+  clock.getTime = 50.55
+  local t2 = U.TimeNow()
+  Test.assertTrue(near(t2 - t1, 0.3), "difference should be 0.3, got " .. (t2 - t1))
+end)
+
+Test.test("TimeNow: stays within the current time() second", function()
+  -- First call happens 0.7s into second 100, so the anchor starts 0.7s behind
+  local clock = { time = 100, getTime = 50.7 }
+  local U = utilWithClock(clock)
+  Test.assertEq(math.floor(U.TimeNow()), 100)
+  clock.time, clock.getTime = 101, 51.0
+  Test.assertEq(U.TimeNow(), 101, "catches up when time() ticks")
+  clock.getTime = 51.5
+  Test.assertEq(U.TimeNow(), 101.5, "then counts precisely")
+  -- GetTime runs ahead of time(): never report the next second early
+  clock.getTime = 52.4
+  local t = U.TimeNow()
+  Test.assertEq(math.floor(t), 101, "got " .. t)
+end)
