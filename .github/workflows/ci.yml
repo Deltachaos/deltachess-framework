@@ -51,7 +51,7 @@ jobs:
           rm -rf "${RUNNER_TEMP}/pkg"
           unzip -q "$zipfile" -d "${RUNNER_TEMP}/pkg"
           cd "${RUNNER_TEMP}/pkg/DeltachessFramework"
-          TEST_WORKERS=$(nproc --all) TEST_IGNORE_SLUGS=engine_consistency_integration lua5.1 Libs/LibUnitWow/run.lua tests Libs/LibChessOpeningBook/tests
+          FAIL_ON_MISSING_SNAPSHOTS=1 TEST_WORKERS=$(nproc --all) TEST_IGNORE_SLUGS=engine_consistency_integration lua5.1 Libs/LibUnitWow/run.lua tests Libs/LibChessOpeningBook/tests
 
   discover-engines:
     name: Discover Engines
@@ -103,4 +103,4 @@ jobs:
           rm -rf "${RUNNER_TEMP}/pkg"
           unzip -q "$zipfile" -d "${RUNNER_TEMP}/pkg"
           cd "${RUNNER_TEMP}/pkg/DeltachessFramework"
-          TEST_WORKERS=$(nproc --all) ALLOWED_ENGINES=${{ matrix.engine }} TEST_ONLY_SLUGS=engine_consistency_integration lua5.1 Libs/LibUnitWow/run.lua tests/integration
+          FAIL_ON_MISSING_SNAPSHOTS=1 TEST_WORKERS=$(nproc --all) ALLOWED_ENGINES=${{ matrix.engine }} TEST_ONLY_SLUGS=engine_consistency_integration lua5.1 Libs/LibUnitWow/run.lua tests/integration
