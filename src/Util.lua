@@ -145,10 +145,38 @@ do
   local os_date = _G.os and _G.os.date
   local wow_time = _G.time
   local wow_date = _G.date
+  local wow_gettime = _G.GetTime
+
+  -- WoW's time() only has whole seconds. GetTime() has milliseconds but counts
+  -- from an arbitrary point, so it is anchored to time(). The offset is nudged
+  -- whenever the result drifts out of [time(), time() + 1), so floor(TimeNow())
+  -- always equals time() and old whole-second timestamps stay comparable.
+  local gettimeOffset
+
+  local function wowTimeNow()
+    local ok, t = pcall(wow_time)
+    if not ok or not t then return nil end
+    if type(wow_gettime) ~= "function" then return t end
+    local okG, g = pcall(wow_gettime)
+    if not okG or type(g) ~= "number" then return t end
+    if not gettimeOffset then gettimeOffset = t - g end
+    local now = g + gettimeOffset
+    if now < t then
+      gettimeOffset = t - g
+      now = t
+    elseif now >= t + 1 then
+      gettimeOffset = t + 0.999 - g
+      now = t + 0.999
+    end
+    return now
+  end
 
   function M.TimeNow()
     if os_time then local ok, v = pcall(os_time); if ok and v then return v end end
-    if type(wow_time) == "function" then local ok, v = pcall(wow_time); if ok and v then return v end end
+    if type(wow_time) == "function" then
+      local v = wowTimeNow()
+      if v then return v end
+    end
     return 0
   end
 
@@ -218,7 +246,7 @@ function M.SerializeJSON(value, options)
     end
 end
 
-function M.DeserializeJSON(source)   
+function M.DeserializeJSON(source)
     if type(source) ~= "string" then return nil, "source must be string" end
     if _G.C_EncodingUtil and type(_G.C_EncodingUtil.DeserializeJSON) == "function" then
         local ok, out = pcall(_G.C_EncodingUtil.DeserializeJSON, source)

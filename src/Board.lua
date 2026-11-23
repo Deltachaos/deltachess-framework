@@ -1235,22 +1235,35 @@ local function getPausedDurationBetween(pauseHistory, startTs, endTs)
   return total
 end
 
+--- Seconds spent on each move: from the previous move (or the game start) to
+-- this move, minus time the game was paused. A move without a timestamp counts
+-- as 0. Returns all zeros if the game has no start time.
+-- @return array of numbers, one per move in history order
+function Board:GetMoveDurations()
+  local durations = {}
+  local history = self._pauseHistory or {}
+  local startTs = self._startTime
+  for i, move in ipairs(self.moves or {}) do
+    local d = 0
+    if startTs then
+      local endTs = type(move.timestamp) == "number" and move.timestamp or startTs
+      d = endTs - startTs - getPausedDurationBetween(history, startTs, endTs)
+      if d < 0 then d = 0 end
+      startTs = endTs
+    end
+    durations[i] = d
+  end
+  return durations
+end
+
 -- Internal: Total time (seconds) spent on the clock by the given color (completed turns only).
 local function getTimeUsedByColor(self, color)
   local stmKey = (color == Constants.COLOR.WHITE) and "w" or "b"
-  local history = self._pauseHistory or {}
   local used = 0
-  local startTs = self._startTime
-  if not startTs then return 0 end
-  for i, move in ipairs(self.moves) do
+  local durations = self:GetMoveDurations()
+  for i, move in ipairs(self.moves or {}) do
     local moveColor = (move.piece == move.piece:upper()) and "w" or "b"
-    if moveColor == stmKey then
-      local endTs = type(move.timestamp) == "number" and move.timestamp or startTs
-      local segment = endTs - startTs
-      segment = segment - getPausedDurationBetween(history, startTs, endTs)
-      if segment > 0 then used = used + segment end
-    end
-    startTs = type(move.timestamp) == "number" and move.timestamp or startTs
+    if moveColor == stmKey then used = used + durations[i] end
   end
   return used
 end
