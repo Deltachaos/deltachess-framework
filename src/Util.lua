@@ -197,7 +197,15 @@ function M.SerializeJSON(value, options)
     end
 end
 
-function M.DeserializeJSON(source)   
+-- True when SerializeJSON/DeserializeJSON have something to work with.
+function M.HasJSON()
+    if _G.C_EncodingUtil and type(_G.C_EncodingUtil.SerializeJSON) == "function" then
+        return true
+    end
+    return DeltaChess.LibJSON ~= nil
+end
+
+function M.DeserializeJSON(source)
     if type(source) ~= "string" then return nil, "source must be string" end
     if _G.C_EncodingUtil and type(_G.C_EncodingUtil.DeserializeJSON) == "function" then
         local ok, out = pcall(_G.C_EncodingUtil.DeserializeJSON, source)
