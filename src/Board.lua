@@ -964,6 +964,9 @@ function Board:Copy()
   for _, entry in ipairs(self._pauseHistory or {}) do
     table.insert(copy._pauseHistory, { pauseTime = entry.pauseTime, unpauseTime = entry.unpauseTime })
   end
+  local pm = self:GetPremove()
+  if pm then copy._premove = { from = pm.from, to = pm.to } end
+  copy._premoveFrom = self:GetPremoveFrom()
 
   return copy
 end
@@ -1055,6 +1058,55 @@ end
 -- @return any stored value or nil
 function Board:GetGameMeta(key)
   return self.gameMeta[key]
+end
+
+--- Queued premove for this game, or nil. One move, stored with the game so it
+--- survives switching the board window to another game.
+-- @return table|nil { from = "e2", to = "e4" }
+function Board:GetPremove()
+  local pm = self._premove
+  if type(pm) ~= "table" or type(pm.from) ~= "string" or type(pm.to) ~= "string" then
+    return nil
+  end
+  return pm
+end
+
+--- Store the queued premove. Clears a half-picked piece (see SetPremoveFrom).
+-- @param from string origin square
+-- @param to string target square
+function Board:SetPremove(from, to)
+  if type(from) == "string" and from ~= "" and type(to) == "string" and to ~= "" then
+    self._premove = { from = from, to = to }
+  else
+    self._premove = nil
+  end
+  self._premoveFrom = nil
+end
+
+--- Square of a piece picked for a premove whose target is not chosen yet.
+-- @return string|nil
+function Board:GetPremoveFrom()
+  if type(self._premoveFrom) == "string" and self._premoveFrom ~= "" then
+    return self._premoveFrom
+  end
+  return nil
+end
+
+--- Pick a piece for a premove. Clears a previously queued move.
+-- @param square string|nil
+function Board:SetPremoveFrom(square)
+  self._premove = nil
+  if type(square) == "string" and square ~= "" then
+    self._premoveFrom = square
+  else
+    self._premoveFrom = nil
+  end
+end
+
+--- Drop the queued premove and any half-picked piece.
+function Board:ClearPremove()
+  self._premove = nil
+  self._premoveFrom = nil
 end
 
 --------------------------------------------------------------------------------
@@ -1716,6 +1768,8 @@ function Board:Serialize()
   for _, entry in ipairs(self._pauseHistory or {}) do
     table.insert(pauseHistoryCopy, { pauseTime = entry.pauseTime, unpauseTime = entry.unpauseTime })
   end
+  local pm = self:GetPremove()
+  local premoveCopy = pm and { from = pm.from, to = pm.to } or nil
 
   return {
     fen = self:GetFen(),
@@ -1739,7 +1793,9 @@ function Board:Serialize()
     clockBlack = self._clockBlack,
     incrementWhite = self._incrementWhite,
     incrementBlack = self._incrementBlack,
-    pauseHistory = pauseHistoryCopy
+    pauseHistory = pauseHistoryCopy,
+    premove = premoveCopy,
+    premoveFrom = self:GetPremoveFrom(),
   }
 end
 
@@ -1804,6 +1860,12 @@ function M.Deserialize(data)
     for _, entry in ipairs(data.pauseHistory) do
       table.insert(board._pauseHistory, { pauseTime = entry.pauseTime, unpauseTime = entry.unpauseTime })
     end
+  end
+  if type(data.premove) == "table" then
+    board:SetPremove(data.premove.from, data.premove.to)
+  end
+  if not board:GetPremove() and type(data.premoveFrom) == "string" then
+    board:SetPremoveFrom(data.premoveFrom)
   end
 
   return board
