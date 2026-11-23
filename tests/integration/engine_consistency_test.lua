@@ -13,13 +13,11 @@ local MoveGen = DeltaChess.MoveGen
 local Engines = DeltaChess.Engines
 local EngineRunner = DeltaChess.EngineRunner
 
--- Resolve __snapshot__ directory for engine_runner snapshots (one file per assertion)
+-- Snapshots live next to this suite file: tests/integration/__snapshot__/
 local source = debug.getinfo(1, "S").source:match("@?(.*)")
 local dir = (source and source:match("(.*)[/\\]")) or "."
-local testsDir = dir:match("(.*)[/\\]")
-local projectRoot = (testsDir and testsDir:match("(.*)[/\\]")) or dir
 local sep = package.config:sub(1, 1)
-local snapshotDir = projectRoot .. sep .. "tests" .. sep .. "integration" .. sep .. "__snapshot__"
+local snapshotDir = dir .. sep .. "__snapshot__"
 
 Test.suite("EngineRunner consistency", "engine_consistency_integration")
 
