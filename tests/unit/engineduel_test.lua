@@ -111,6 +111,38 @@ local function createFirstMoveEngine(id)
   }
 end
 
+-- Engine that never steps into a position already seen in the game, so long
+-- test games aren't cut short by fivefold repetition. Both sides share one
+-- `seen` table. `allow(pos, mv)` can limit which moves it considers.
+local function createNoRepeatEngine(id, seen, allow)
+  return {
+    id = id,
+    name = "No Repeat Engine " .. id,
+    GetEloRange = function() return { 1000, 2000 } end,
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
+      local pos = MoveGen.ParseFen(state.fen)
+      local candidates = {}
+      for _, mv in ipairs(MoveGen.LegalMoves(pos)) do
+        if not allow or allow(pos, mv) then candidates[#candidates + 1] = mv end
+      end
+      if #candidates == 0 then
+        onComplete(nil, { message = "no legal moves" })
+        return
+      end
+      local pick = candidates[1]
+      for _, mv in ipairs(candidates) do
+        local key = MoveGen.PosToFen(MoveGen.MakeMove(pos, mv)):match("^(%S+ %S+ %S+ %S+)")
+        if not seen[key] then
+          seen[key] = true
+          pick = mv
+          break
+        end
+      end
+      onComplete({ move = MoveGen.MoveToUci(pick) }, nil)
+    end
+  }
+end
+
 --------------------------------------------------------------------------------
 -- Constants Tests
 --------------------------------------------------------------------------------
@@ -579,8 +611,9 @@ Test.test("PlayGame: 100+ half-moves does not exceed call stack", function()
   
   -- Use first-move engines that will play legal moves continuously
   -- The game should timeout at 100 half-moves without stack overflow
-  Engines.Registry["stack_white"] = createFirstMoveEngine("stack_white")
-  Engines.Registry["stack_black"] = createFirstMoveEngine("stack_black")
+  local seen = {}
+  Engines.Registry["stack_white"] = createNoRepeatEngine("stack_white", seen)
+  Engines.Registry["stack_black"] = createNoRepeatEngine("stack_black", seen)
   
   local doneCalled = false
   local resultVal, movesVal, errorMsgVal
@@ -611,8 +644,9 @@ Test.test("PlayGame: 200 half-moves does not exceed call stack", function()
   -- Test with 200 moves to ensure the trampoline handles even longer games
   -- without stack overflow. The game may end early due to 50-move rule (DRAWN)
   -- if no pawn moves or captures reset the half-move clock.
-  Engines.Registry["stack200_white"] = createFirstMoveEngine("stack200_white")
-  Engines.Registry["stack200_black"] = createFirstMoveEngine("stack200_black")
+  local seen = {}
+  Engines.Registry["stack200_white"] = createNoRepeatEngine("stack200_white", seen)
+  Engines.Registry["stack200_black"] = createNoRepeatEngine("stack200_black", seen)
   
   local doneCalled = false
   local resultVal, movesVal
@@ -640,44 +674,12 @@ end)
 -- 50-Move Rule Tests
 --------------------------------------------------------------------------------
 
--- Create a mock engine that only moves knights back and forth (no captures, no pawn moves)
-local function createKnightShuffleEngine(id)
-  local moveIndex = 0
-  -- Alternating knight moves that don't capture: g1f3, f3g1, etc.
-  local knightMoves = { "g1f3", "f3g1" }
-  return {
-    id = id,
-    name = "Knight Shuffle Engine " .. id,
-    GetEloRange = function() return { 1000, 2000 } end,
-    Calculate = function(self, state, loopFn, stepFn, onComplete)
-      moveIndex = (moveIndex % #knightMoves) + 1
-      local move = knightMoves[moveIndex]
-      -- Verify the move is legal, otherwise use first legal move
-      local pos = MoveGen.ParseFen(state.fen)
-      local legal = MoveGen.LegalMoves(pos)
-      for _, mv in ipairs(legal) do
-        if MoveGen.MoveToUci(mv) == move then
-          onComplete({ move = move }, nil)
-          return
-        end
-      end
-      -- Move not legal, pick first legal non-pawn move
-      for _, mv in ipairs(legal) do
-        local fromSq = mv.from
-        local piece = pos.board[fromSq]
-        if piece ~= "P" and piece ~= "p" then
-          onComplete({ move = MoveGen.MoveToUci(mv) }, nil)
-          return
-        end
-      end
-      -- No non-pawn move, use first legal
-      if #legal > 0 then
-        onComplete({ move = MoveGen.MoveToUci(legal[1]) }, nil)
-      else
-        onComplete(nil, { message = "no legal moves" })
-      end
-    end
-  }
+-- Quiet moves only: no pawn moves and no captures, so the half-move clock never
+-- resets. No checks either, so the other side is never forced into a capture.
+local function isQuietPieceMove(pos, mv)
+  local piece = pos.board[mv.from]
+  if piece == "P" or piece == "p" or pos.board[mv.to] ~= "." then return false end
+  return not MoveGen.InCheck(MoveGen.MakeMove(pos, mv))
 end
 
 Test.test("PlayGame: 50-move rule triggers DRAWN", function()
@@ -687,8 +689,9 @@ Test.test("PlayGame: 50-move rule triggers DRAWN", function()
   
   -- Use engines that shuffle pieces without capturing or moving pawns
   -- This should trigger the 50-move rule after 100 half-moves
-  Engines.Registry["fifty_white"] = createKnightShuffleEngine("fifty_white")
-  Engines.Registry["fifty_black"] = createKnightShuffleEngine("fifty_black")
+  local seen = {}
+  Engines.Registry["fifty_white"] = createNoRepeatEngine("fifty_white", seen, isQuietPieceMove)
+  Engines.Registry["fifty_black"] = createNoRepeatEngine("fifty_black", seen, isQuietPieceMove)
   
   local doneCalled = false
   local resultVal, movesVal
