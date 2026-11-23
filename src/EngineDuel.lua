@@ -137,6 +137,7 @@ function M.PlayGame(whiteEngineId, whiteElo, blackEngineId, blackElo, maxHalfMov
 
         local engineId, elo = getEngineAndElo(isWhite)
         local builder = EngineRunner.Create(engineId)
+            :UseOpeningBook(false)
             :Fen(currentFen)
             :Moves(movesUci)
             :OnComplete(function(res, err)

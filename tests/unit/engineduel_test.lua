@@ -111,34 +111,72 @@ local function createFirstMoveEngine(id)
   }
 end
 
--- Engine that never steps into a position already seen in the game, so long
--- test games aren't cut short by fivefold repetition. Both sides share one
--- `seen` table. `allow(pos, mv)` can limit which moves it considers.
-local function createNoRepeatEngine(id, seen, allow)
-  return {
-    id = id,
-    name = "No Repeat Engine " .. id,
-    GetEloRange = function() return { 1000, 2000 } end,
-    Calculate = function(self, state, loopFn, stepFn, onComplete)
-      local pos = MoveGen.ParseFen(state.fen)
-      local candidates = {}
-      for _, mv in ipairs(MoveGen.LegalMoves(pos)) do
-        if not allow or allow(pos, mv) then candidates[#candidates + 1] = mv end
-      end
-      if #candidates == 0 then
-        onComplete(nil, { message = "no legal moves" })
-        return
-      end
-      local pick = candidates[1]
-      for _, mv in ipairs(candidates) do
-        local key = MoveGen.PosToFen(MoveGen.MakeMove(pos, mv)):match("^(%S+ %S+ %S+ %S+)")
-        if not seen[key] then
-          seen[key] = true
-          pick = mv
-          break
+-- FIDE repetition key: placement, side to move, castling, en passant.
+local function repetitionKey(fen)
+  local parts = {}
+  for part in (fen or ""):gmatch("%S+") do
+    parts[#parts + 1] = part
+  end
+  return (parts[1] or "") .. " " .. (parts[2] or "") .. " " .. (parts[3] or "-") .. " " .. (parts[4] or "-")
+end
+
+-- Legal move that does not make the resulting position occur a fifth time.
+-- quietOnly skips pawns and captures so the 50-move clock keeps ticking.
+-- Otherwise a clock-resetting move is preferred when several moves are equally fresh.
+local function pickNonRepeatingMove(moves, quietOnly)
+  local pos = MoveGen.ParseFen(EngineDuel.START_FEN)
+  if not pos then return nil end
+  local counts = {}
+  local function note(p)
+    local key = repetitionKey(MoveGen.PosToFen(p))
+    counts[key] = (counts[key] or 0) + 1
+  end
+  note(pos)
+  for _, uci in ipairs(moves or {}) do
+    local mv = MoveGen.MoveFromUci(pos, uci)
+    if not mv then return nil end
+    pos = MoveGen.MakeMove(pos, mv)
+    if not pos then return nil end
+    note(pos)
+  end
+
+  local legal = MoveGen.LegalMoves(pos)
+  local best
+  for _, mv in ipairs(legal) do
+    local piece = pos.board[mv.from]
+    local dest = pos.board[mv.to]
+    local isPawn = piece == "P" or piece == "p"
+    local isCapture = (dest ~= nil and dest ~= ".") or mv.ep
+    if not (quietOnly and (isPawn or isCapture)) then
+      local nextPos = MoveGen.MakeMove(pos, mv)
+      local seen = counts[repetitionKey(MoveGen.PosToFen(nextPos))] or 0
+      if seen < 4 then
+        local resets = (not quietOnly) and (isPawn or isCapture)
+        local uci = MoveGen.MoveToUci(mv)
+        if not best
+            or seen < best.seen
+            or (seen == best.seen and resets and not best.resets)
+            or (seen == best.seen and resets == best.resets and uci < best.uci) then
+          best = { uci = uci, seen = seen, resets = resets }
         end
       end
-      onComplete({ move = MoveGen.MoveToUci(pick) }, nil)
+    end
+  end
+  return best and best.uci
+end
+
+local function createNonRepeatingEngine(id, quietOnly)
+  return {
+    id = id,
+    name = "Non-repeating Engine " .. id,
+    GetEloRange = function() return { 1000, 2000 } end,
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
+      local uci = pickNonRepeatingMove(state.moves, quietOnly)
+      if uci then
+        onComplete({ move = uci }, nil)
+      else
+        onComplete(nil, { message = "no legal moves" })
+      end
     end
   }
 end
@@ -609,11 +647,10 @@ end)
 Test.test("PlayGame: 100+ half-moves does not exceed call stack", function()
   saveRegistryState()
   
-  -- Use first-move engines that will play legal moves continuously
-  -- The game should timeout at 100 half-moves without stack overflow
-  local seen = {}
-  Engines.Registry["stack_white"] = createNoRepeatEngine("stack_white", seen)
-  Engines.Registry["stack_black"] = createNoRepeatEngine("stack_black", seen)
+  -- Play legal moves that do not repeat a position five times, and reset the
+  -- 50-move clock often enough that the game reaches the half-move limit.
+  Engines.Registry["stack_white"] = createNonRepeatingEngine("stack_white", false)
+  Engines.Registry["stack_black"] = createNonRepeatingEngine("stack_black", false)
   
   local doneCalled = false
   local resultVal, movesVal, errorMsgVal
@@ -643,10 +680,10 @@ Test.test("PlayGame: 200 half-moves does not exceed call stack", function()
   
   -- Test with 200 moves to ensure the trampoline handles even longer games
   -- without stack overflow. The game may end early due to 50-move rule (DRAWN)
-  -- if no pawn moves or captures reset the half-move clock.
-  local seen = {}
-  Engines.Registry["stack200_white"] = createNoRepeatEngine("stack200_white", seen)
-  Engines.Registry["stack200_black"] = createNoRepeatEngine("stack200_black", seen)
+  -- if no pawn moves or captures reset the half-move clock. Moves are chosen so
+  -- fivefold repetition does not draw the game before that.
+  Engines.Registry["stack200_white"] = createNonRepeatingEngine("stack200_white", false)
+  Engines.Registry["stack200_black"] = createNonRepeatingEngine("stack200_black", false)
   
   local doneCalled = false
   local resultVal, movesVal
@@ -674,24 +711,15 @@ end)
 -- 50-Move Rule Tests
 --------------------------------------------------------------------------------
 
--- Quiet moves only: no pawn moves and no captures, so the half-move clock never
--- resets. No checks either, so the other side is never forced into a capture.
-local function isQuietPieceMove(pos, mv)
-  local piece = pos.board[mv.from]
-  if piece == "P" or piece == "p" or pos.board[mv.to] ~= "." then return false end
-  return not MoveGen.InCheck(MoveGen.MakeMove(pos, mv))
-end
-
 Test.test("PlayGame: 50-move rule triggers DRAWN", function()
   saveRegistryState()
   
   local Constants = DeltaChess.Constants
   
-  -- Use engines that shuffle pieces without capturing or moving pawns
-  -- This should trigger the 50-move rule after 100 half-moves
-  local seen = {}
-  Engines.Registry["fifty_white"] = createNoRepeatEngine("fifty_white", seen, isQuietPieceMove)
-  Engines.Registry["fifty_black"] = createNoRepeatEngine("fifty_black", seen, isQuietPieceMove)
+  -- Shuffle pieces without capturing or moving pawns, and without repeating
+  -- any position five times. Fivefold repetition would otherwise draw first.
+  Engines.Registry["fifty_white"] = createNonRepeatingEngine("fifty_white", true)
+  Engines.Registry["fifty_black"] = createNonRepeatingEngine("fifty_black", true)
   
   local doneCalled = false
   local resultVal, movesVal

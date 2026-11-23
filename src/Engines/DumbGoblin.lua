@@ -49,7 +49,7 @@ local function isCheckmate(MoveGen, pos, mv)
 end
 
 function M:Calculate(state, loopFn, stepFn, onComplete)
-    loopFn = loopFn or function(step, done) while step() ~= false do end; done() end
+    local Slice = DeltaChess.Slice
     onComplete = onComplete or function() end
     if state.cancelled then
         onComplete(nil, "cancelled")
@@ -71,14 +71,9 @@ function M:Calculate(state, loopFn, stepFn, onComplete)
         return
     end
 
-    -- All work fits in a single step; store result in a local for doneFn.
-    local result, err
-
-    loopFn(function()
-        -- stepFn: do all work in one step
+    Slice.Run(loopFn, function()
         if state.cancelled then
-            err = "cancelled"
-            return false
+            return nil, "cancelled"
         end
         local checkmateMoves = {}
         for _, mv in ipairs(legal) do
@@ -108,17 +103,13 @@ function M:Calculate(state, loopFn, stepFn, onComplete)
             end
         end
         local uci = MoveGen.MoveToUci(chosen)
-        result = {
+        return {
             move = uci,
             san = uci,
             depth = 0,
             nodes = #legal,
-        }
-        return false  -- done in one step
-    end, function()
-        -- doneFn: report result
-        onComplete(result, err)
-    end)
+        }, nil
+    end, onComplete, state)
 end
 
 DeltaChess.Engines.Registry[M.id] = M

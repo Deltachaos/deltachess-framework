@@ -5,6 +5,9 @@ externals:
     url: https://github.com/WoWUIDev/Ace3
     branch: master
     path: LibStub
+  Libs/LibChessOpeningBook:
+    url: https://github.com/Deltachaos/LibChessOpeningBook
+    branch: main
   Libs/LibUnitWow:
     url: https://github.com/Deltachaos/LibUnitWow
     branch: main
@@ -12,3 +15,4 @@ externals:
 ignore:
   - tests
   - Libs/LibUnitWow
+  - Libs/LibChessOpeningBook/tests

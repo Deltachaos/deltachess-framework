@@ -34,6 +34,7 @@ local function runEngineSync(engineId, fen, opts)
   opts = opts or {}
   local result, err
   local builder = EngineRunner.Create(engineId)
+    :UseOpeningBook(false)
     :Fen(fen)
     :LoopFn(syncLoop)
     :OnComplete(function(r, e)
@@ -403,7 +404,27 @@ end
 -- Default opts: engines use ply_limit and/or node_limit as they support (e.g. GarboChess uses ply, Sunfish uses nodes)
 local defaultOpts = { ply_limit = 2, node_limit = 1000 }
 
-local engineList = Test.getEngineList()
+-- Resolve engines here (not via LibUnitWow): optional ALLOWED_ENGINES=id1,id2 filter for CI matrix jobs.
+local function getEngineList()
+  local list = Engines and Engines:GetEngineList() or {}
+  if not list or #list == 0 then return {} end
+  local allowedEnv = os.getenv and os.getenv("ALLOWED_ENGINES")
+  if not allowedEnv or allowedEnv == "" then return list end
+  local allowed = {}
+  for engineId in allowedEnv:gmatch("[^,]+") do
+    local trimmed = engineId:gsub("^%s+", ""):gsub("%s+$", ""):lower()
+    if trimmed ~= "" then allowed[trimmed] = true end
+  end
+  local filtered = {}
+  for i = 1, #list do
+    if allowed[(list[i].id or ""):lower()] then
+      filtered[#filtered + 1] = list[i]
+    end
+  end
+  return filtered
+end
+
+local engineList = getEngineList()
 
 --------------------------------------------------------------------------------
 -- Each engine: all positions
@@ -467,7 +488,14 @@ for _, engine in ipairs(engineList) do
 end
 
 if #engineList == 0 then
-  Test.test("No engines registered (placeholder)", function()
-    Test.assertTrue(true, "Register engines (e.g. GarboChess, Sunfish) to run engine integration tests")
+  Test.test("No engines registered", function()
+    local allowed = os.getenv and os.getenv("ALLOWED_ENGINES")
+    if allowed and allowed ~= "" then
+      -- CI sets ALLOWED_ENGINES per matrix job; an empty list is a false green, not a skip.
+      Test.assertTrue(false,
+        "ALLOWED_ENGINES=" .. allowed .. " but no matching engines were registered")
+    else
+      Test.assertTrue(true, "Register engines (e.g. GarboChess, Sunfish) to run engine integration tests")
+    end
   end)
 end

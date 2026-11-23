@@ -409,9 +409,17 @@ function Position:genMoves()
         end
     end
     
-    -- Filter to legal moves using in-engine check (no MoveGen per move)
+    -- Filter to legal moves using in-engine check (no MoveGen per move).
+    -- isLegalMove makes a child position; yield here so one node cannot blow the slice.
+    local Slice = DeltaChess.Slice
     local legalMoves = {}
     for _, mv in ipairs(pseudoMoves) do
+        if Slice then
+            Slice.Poll()
+            if Slice.Stopped() then
+                return legalMoves
+            end
+        end
         if isLegalMove(self, mv) then
             table.insert(legalMoves, {mv[1], mv[2]})
         end
@@ -638,8 +646,13 @@ end
 local function bound(tt, pos, gamma, depth, nodeCount, state)
     nodeCount[1] = nodeCount[1] + 1
 
-    -- Check for cancellation periodically
-    if nodeCount[1] % 1000 == 0 and state.cancelled then
+    local Slice = DeltaChess.Slice
+    if Slice then
+        Slice.Poll()
+        if Slice.Stopped() then
+            return nil, nil
+        end
+    elseif nodeCount[1] % 1000 == 0 and state.cancelled then
         return nil, nil
     end
 
@@ -662,6 +675,9 @@ local function bound(tt, pos, gamma, depth, nodeCount, state)
 
     local best, bmove = -3 * MATE_VALUE, nil
     local moves = pos:genMoves()
+    if Slice and Slice.Stopped() then
+        return nil, nil
+    end
     local function sorter(a, b)
         local va = pos:value(a)
         local vb = pos:value(b)
@@ -678,6 +694,12 @@ local function bound(tt, pos, gamma, depth, nodeCount, state)
     table.sort(moves, sorter)
 
     for _, move in ipairs(moves) do
+        if Slice then
+            Slice.Poll()
+            if Slice.Stopped() then
+                return nil, nil
+            end
+        end
         if state.cancelled then return nil, nil end
         if depth <= 0 and pos:value(move) < 150 then
             break
@@ -709,95 +731,57 @@ local function bound(tt, pos, gamma, depth, nodeCount, state)
     return best, bmove
 end
 
--- Runs search with loopFn yielding between depths and MTD iterations.
+-- Runs search inside a slice coroutine. Yields from bound() via Slice.Poll.
 -- Calls onSearchDone(move, score, nodeCount) when finished.
--- Flattened into a single stepFn that tracks depth and gamma sub-state.
 local function search(tt, pos, maxn, state, loopFn, onSearchDone)
-    loopFn = loopFn or function(step, done) while step() ~= false do end; done() end
-    local nodeCount = {0}
-    local score = 0
-    local lastMove = nil
+    local Slice = DeltaChess.Slice
+    Slice.Run(loopFn, function()
+        local nodeCount = {0}
+        local score = 0
+        local lastMove = nil
 
-    -- State for the flattened step function
-    local depth = 1
-    local lower, upper
-    local gammaCount = 0
-    local needNewDepth = true  -- start by initializing a new depth
-    local searchResult = nil   -- set when done; {move, score, nodes}
-
-    loopFn(function()
-        -- stepFn: each call does one unit of work (one gamma iteration or depth init)
-
-        -- Start a new depth: check termination, init bounds
-        if needNewDepth then
-            if state.cancelled then
-                searchResult = { lastMove, score, nodeCount[1] }
-                return false
+        for depth = 1, 98 do
+            if (Slice and Slice.Stopped()) or state.cancelled or nodeCount[1] >= maxn then
+                break
             end
-            if depth > 98 or nodeCount[1] >= maxn then
-                local entry = tp_get(tt, pos)
-                local mv = (entry and entry.move) or lastMove
-                searchResult = { mv, score, nodeCount[1] }
-                return false
+            local lower = -3 * MATE_VALUE
+            local upper = 3 * MATE_VALUE
+            while lower < upper - 3 do
+                if (Slice and Slice.Stopped()) or state.cancelled then
+                    break
+                end
+                local gamma = math.floor((lower + upper + 1) / 2)
+                score = bound(tt, pos, gamma, depth, nodeCount, state)
+                if score == nil or state.cancelled or (Slice and Slice.Stopped()) then
+                    break
+                end
+                if score >= gamma then
+                    lower = score
+                end
+                if score < gamma then
+                    upper = score
+                end
             end
-            lower = -3 * MATE_VALUE
-            upper = 3 * MATE_VALUE
-            gammaCount = 0
-            needNewDepth = false
-            return true  -- yield before first gamma iteration of this depth
-        end
-
-        -- Gamma convergence check: if converged, advance depth
-        if lower >= upper - 3 then
             local entry = tp_get(tt, pos)
             if entry and entry.move then
                 lastMove = entry.move
             end
+            if Slice then Slice.AllowStop(true) end
             if nodeCount[1] >= maxn or math.abs(score) >= MATE_VALUE then
-                entry = tp_get(tt, pos)
-                local mv = (entry and entry.move) or lastMove
-                searchResult = { mv, score, nodeCount[1] }
-                return false
+                break
             end
-            depth = depth + 1
-            needNewDepth = true
-            return true  -- yield before next depth
         end
 
-        -- Run one gamma iteration
-        if state.cancelled then
-            searchResult = { lastMove, score, nodeCount[1] }
-            return false
-        end
-
-        local gamma = math.floor((lower + upper + 1) / 2)
-        score = bound(tt, pos, gamma, depth, nodeCount, state)
-        if score == nil or state.cancelled then
-            searchResult = { lastMove, score, nodeCount[1] }
-            return false
-        end
-        if score >= gamma then
-            lower = score
-        end
-        if score < gamma then
-            upper = score
-        end
-        gammaCount = gammaCount + 1
-        -- Yield every 2 MTD iterations to balance responsiveness and throughput
-        if gammaCount >= 2 then
-            gammaCount = 0
-            return true  -- yield
-        end
-        -- Run another gamma iteration without yielding (tail into next step inline)
-        return true
-    end, function()
-        -- doneFn
-        if searchResult then
-            onSearchDone(searchResult[1], searchResult[2], searchResult[3])
+        local entry = tp_get(tt, pos)
+        local mv = (entry and entry.move) or lastMove
+        return { mv, score, nodeCount[1] }, nil
+    end, function(result, err)
+        if result then
+            onSearchDone(result[1], result[2], result[3])
         else
-            onSearchDone(lastMove, score, nodeCount[1])
+            onSearchDone(nil, 0, 0)
         end
-    end)
+    end, state)
 end
 
 --------------------------------------------------------------------------------
@@ -858,13 +842,8 @@ function M:Calculate(state, loopFn, stepFn, onComplete)
     -- Create fresh transposition table for this search
     local tt = createTranspositionTable()
 
-    -- Run the search (loopFn yields between depths and MTD iterations)
+    -- Run the search (yields from Slice.Poll inside bound)
     search(tt, pos, nodeLimit, state, loopFn, function(move, score, nodes)
-        if state.cancelled then
-            onComplete(nil, "cancelled")
-            return
-        end
-
         if not move then
             -- No move found - use MoveGen to get a legal move
             local mgPos = MoveGen.ParseFen(state.fen)
