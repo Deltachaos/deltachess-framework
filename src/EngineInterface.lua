@@ -44,11 +44,13 @@ DeltaChess.Engines.defaultId = nil  -- No longer auto-set; default determined by
 --   Calculate(state, loopFn, stepFn, onComplete)
 --     state     - State table (see above). Use state.fen; never mutate state.
 --     loopFn    - function(stepFn, doneFn). Loop driver for async iteration.
---                 stepFn() does one unit of work; returns false when done, truthy to continue.
+--                 Engines should call DeltaChess.Slice.Run(loopFn, work, onComplete, state)
+--                 so search can yield mid-tree. stepFn() resumes one time slice;
+--                 returns false when done, truthy to continue.
 --                 doneFn() is called once after stepFn returns false.
 --                 The runner defers between steps (e.g. C_Timer.NewTicker in WoW) so
---                 the call stack stays flat and the UI remains responsive.
---                 Inside stepFn, check state.cancelled to detect abort requests.
+--                 the UI remains responsive. Inside search, call Slice.Poll() and
+--                 honor Slice.Stopped() / state.cancelled.
 --     stepFn    - function(items). Deferred step executor provided by the runner.
 --                 Pass a single function to defer it via the runner's DelayFn,
 --                 or pass a list of functions to iterate them via the runner's LoopFn.

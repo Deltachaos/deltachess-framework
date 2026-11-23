@@ -51,7 +51,7 @@ jobs:
           rm -rf "${RUNNER_TEMP}/pkg"
           unzip -q "$zipfile" -d "${RUNNER_TEMP}/pkg"
           cd "${RUNNER_TEMP}/pkg/DeltachessFramework"
-          TEST_IGNORE_SLUGS=engine_consistency_integration lua5.1 Libs/LibUnitWow/run.lua
+          TEST_IGNORE_SLUGS=engine_consistency_integration lua5.1 Libs/LibUnitWow/run.lua tests Libs/LibChessOpeningBook/tests
 
   discover-engines:
     name: Discover Engines

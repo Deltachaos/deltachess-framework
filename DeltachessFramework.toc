@@ -6,4 +6,5 @@
 ## LoadOnDemand: 1
 
 Libs/LibStub/LibStub.lua
+Libs/LibChessOpeningBook/lib.xml
 lib.xml

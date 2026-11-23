@@ -10,6 +10,11 @@ local MoveGen = DeltaChess.MoveGen
 local Engines = DeltaChess.Engines
 local EngineRunner = DeltaChess.EngineRunner
 
+-- Engine-behavior tests disable books so mock moves are used.
+local function noBook(engineId)
+  return EngineRunner.Create(engineId):UseOpeningBook(false)
+end
+
 Test.suite("EngineRunner", "enginerunner")
 
 --------------------------------------------------------------------------------
@@ -95,6 +100,18 @@ Test.test("Builder methods return self for chaining", function()
   
   local b6 = builder:HandleError(function() end)
   Test.assertEq(b6, builder, "HandleError should return self")
+
+  local b7 = builder:SliceMs(8)
+  Test.assertEq(b7, builder, "SliceMs should return self")
+
+  local b8 = builder:UseOpeningBook(true)
+  Test.assertEq(b8, builder, "UseOpeningBook should return self")
+
+  local b9 = builder:OpeningBooks("first_moves")
+  Test.assertEq(b9, builder, "OpeningBooks should return self")
+
+  local b10 = builder:BookDepth(4)
+  Test.assertEq(b10, builder, "BookDepth should return self")
 end)
 
 --------------------------------------------------------------------------------
@@ -129,7 +146,7 @@ Test.test("Returns move from successful engine calculation", function()
   local completed = false
   local resultVal, errorVal
   
-  EngineRunner.Create("mock_success")
+  noBook("mock_success")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     :OnComplete(function(result, err)
       completed = true
@@ -152,7 +169,7 @@ Test.test("Uses default FEN when none provided", function()
   local completed = false
   local resultVal
   
-  EngineRunner.Create("mock_default_fen")
+  noBook("mock_default_fen")
     :OnComplete(function(result, err)
       completed = true
       resultVal = result
@@ -172,7 +189,7 @@ Test.test("Uses async loopFn correctly", function()
   local completed = false
   local resultVal
   
-  EngineRunner.Create("mock_async")
+  noBook("mock_async")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     :LoopFn(function(step, done)
       loopFnCalled = true
@@ -203,7 +220,7 @@ Test.test("Propagates engine error to OnComplete", function()
   local completed = false
   local resultVal, errorVal
   
-  EngineRunner.Create("mock_error")
+  noBook("mock_error")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     :OnComplete(function(result, err)
       completed = true
@@ -225,7 +242,7 @@ Test.test("HandleError callback is called on error", function()
   local handleErrorCalled = false
   local errorReceived = nil
   
-  EngineRunner.Create("mock_error_handler")
+  noBook("mock_error_handler")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     :HandleError(function(err)
       handleErrorCalled = true
@@ -248,7 +265,7 @@ Test.test("HandleError returning false propagates error", function()
   local completed = false
   local resultVal, errorVal
   
-  EngineRunner.Create("mock_propagate")
+  noBook("mock_propagate")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     :HandleError(function(err)
       return false  -- Propagate error, don't use fallback
@@ -273,7 +290,7 @@ Test.test("HandleError returning true provides random legal move", function()
   local completed = false
   local resultVal, errorVal
   
-  EngineRunner.Create("mock_fallback")
+  noBook("mock_fallback")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     :HandleError(function(err)
       return true  -- Use fallback
@@ -304,7 +321,7 @@ Test.test("HandleError returning nil (truthy) also provides random legal move", 
   local completed = false
   local resultVal, errorVal
   
-  EngineRunner.Create("mock_fallback_nil")
+  noBook("mock_fallback_nil")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     :HandleError(function(err)
       -- Return nothing (nil), which is not false
@@ -335,7 +352,7 @@ Test.test("Rejects illegal move from engine", function()
   local completed = false
   local resultVal, errorVal
   
-  EngineRunner.Create("mock_illegal")
+  noBook("mock_illegal")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     :OnComplete(function(result, err)
       completed = true
@@ -360,7 +377,7 @@ Test.test("HandleError works for illegal move errors", function()
   local completed = false
   local resultVal
   
-  EngineRunner.Create("mock_illegal_handled")
+  noBook("mock_illegal_handled")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     :HandleError(function(err)
       handleErrorCalled = true
@@ -400,7 +417,7 @@ Test.test("Uses engine default ELO when not specified", function()
   
   local completed = false
   
-  EngineRunner.Create("mock_elo_check")
+  noBook("mock_elo_check")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     :OnComplete(function(result, err)
       completed = true
@@ -426,7 +443,7 @@ Test.test("Uses provided ELO over default", function()
     end
   }
   
-  EngineRunner.Create("mock_elo_override")
+  noBook("mock_elo_override")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     :Elo(1700)
     :OnComplete(function() end)
@@ -451,7 +468,7 @@ Test.test("Uses default time limit when not specified", function()
     end
   }
   
-  EngineRunner.Create("mock_time_default")
+  noBook("mock_time_default")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     :OnComplete(function() end)
     :Run()
@@ -471,7 +488,7 @@ Test.test("Uses provided time limit", function()
     end
   }
   
-  EngineRunner.Create("mock_time_custom")
+  noBook("mock_time_custom")
     :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     :TimeLimitMs(5000)
     :OnComplete(function() end)
@@ -496,7 +513,7 @@ Test.test("Builds FEN from moves when FEN not provided", function()
     end
   }
   
-  EngineRunner.Create("mock_moves_to_fen")
+  noBook("mock_moves_to_fen")
     :Moves({"e2e4"})
     :OnComplete(function() end)
     :Run()
@@ -506,4 +523,328 @@ Test.test("Builds FEN from moves when FEN not provided", function()
   Test.assertNotNil(fenUsed, "FEN should be generated from moves")
   -- After e2e4, it's black's turn
   Test.assertTrue(fenUsed:find(" b "), "FEN should show black to move after e2e4")
+end)
+
+--------------------------------------------------------------------------------
+-- Time-sliced Start / Compute / Cancel
+--------------------------------------------------------------------------------
+
+local function registerSliceMock(id, spins)
+  local engine = {
+    id = id,
+    name = "Slice Mock " .. id,
+    GetEloRange = function()
+      return { 1000, 2000 }
+    end,
+    Calculate = function(self, state, loopFn, stepFn, onComplete)
+      local Slice = DeltaChess.Slice
+      Slice.Run(loopFn, function()
+        local n = 0
+        local max = spins or 3000
+        while n < max do
+          Slice.Poll()
+          if Slice.Stopped() then
+            break
+          end
+          n = n + 1
+        end
+        Slice.AllowStop(true)
+        return { move = "e2e4", san = "e2e4" }, nil
+      end, onComplete, state)
+    end,
+  }
+  DeltaChess.Engines.Registry[id] = engine
+  return engine
+end
+
+Test.test("Compute with a tiny budget returns true more than once", function()
+  registerSliceMock("mock_slice_compute", 3000)
+
+  local completed = 0
+  local resultVal
+
+  local session = noBook("mock_slice_compute")
+    :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+    :OnComplete(function(result, err)
+      completed = completed + 1
+      resultVal = result
+    end)
+    :Start()
+
+  Test.assertNotNil(session, "Start should return a session")
+  Test.assertTrue(session:Compute(0), "First Compute should still be thinking")
+  Test.assertTrue(session:Compute(0), "Second Compute should still be thinking")
+  Test.assertEq(completed, 0, "OnComplete should not run while thinking")
+
+  local guard = 0
+  while session:Compute(math.huge) do
+    guard = guard + 1
+    Test.assertTrue(guard < 100, "Search should finish")
+  end
+
+  unregisterMockEngine("mock_slice_compute")
+
+  Test.assertEq(completed, 1, "OnComplete should run once")
+  Test.assertNotNil(resultVal, "Result should not be nil")
+  Test.assertEq(resultVal.move, "e2e4", "Move should be e2e4")
+end)
+
+Test.test("Cancel stops a later Compute", function()
+  registerSliceMock("mock_slice_cancel", 100000)
+
+  local completed = 0
+  local resultVal
+
+  local session = noBook("mock_slice_cancel")
+    :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+    :OnComplete(function(result, err)
+      completed = completed + 1
+      resultVal = result
+    end)
+    :Start()
+
+  Test.assertTrue(session:Compute(0), "Should still be thinking before cancel")
+  session:Cancel()
+  Test.assertTrue(session:Compute(0) == false, "Compute after Cancel should finish")
+  Test.assertEq(completed, 1, "OnComplete should run once after cancel")
+  Test.assertNotNil(resultVal, "Cancelled search should keep a move")
+  Test.assertEq(resultVal.move, "e2e4", "Move should be e2e4")
+
+  unregisterMockEngine("mock_slice_cancel")
+end)
+
+Test.test("LoopFn with SliceMs observes several steps and a single done", function()
+  registerSliceMock("mock_slice_loopfn", 3000)
+
+  local steps = 0
+  local dones = 0
+  local completed = 0
+  local resultVal
+
+  noBook("mock_slice_loopfn")
+    :Fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+    :SliceMs(0)
+    :LoopFn(function(step, done)
+      while step() ~= false do
+        steps = steps + 1
+      end
+      dones = dones + 1
+      done()
+    end)
+    :OnComplete(function(result, err)
+      completed = completed + 1
+      resultVal = result
+    end)
+    :Run()
+
+  unregisterMockEngine("mock_slice_loopfn")
+
+  Test.assertTrue(steps > 1, "LoopFn should see several steps, got " .. tostring(steps))
+  Test.assertEq(dones, 1, "LoopFn done should run once")
+  Test.assertEq(completed, 1, "OnComplete should run once")
+  Test.assertEq(resultVal.move, "e2e4", "Move should be e2e4")
+end)
+
+--------------------------------------------------------------------------------
+-- Opening book (on by default)
+--------------------------------------------------------------------------------
+
+local START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+local E4_FEN = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+local OFFBOOK_FEN = "4k3/8/8/8/8/8/8/4K3 w - - 0 1"
+
+local function withRunnerBook(book, fn)
+  local Book = LibStub("LibChessOpeningBook-1.0")
+  local prev = Book.books[book.id]
+  Book:Register(book)
+  local ok, err = pcall(fn)
+  if prev then
+    Book.books[book.id] = prev
+  else
+    Book.books[book.id] = nil
+  end
+  if not ok then error(err) end
+end
+
+Test.test("UseOpeningBook(false) skips the opening book", function()
+  local calculated = false
+  local engine = createMockEngine("mock_book_off", { move = "a2a3", immediate = true })
+  local origCalculate = engine.Calculate
+  engine.Calculate = function(self, state, loopFn, stepFn, onComplete)
+    calculated = true
+    return origCalculate(self, state, loopFn, stepFn, onComplete)
+  end
+  DeltaChess.Engines.Registry["mock_book_off"] = engine
+
+  local resultVal
+  EngineRunner.Create("mock_book_off")
+    :Fen(START_FEN)
+    :UseOpeningBook(false)
+    :OnComplete(function(result, err)
+      resultVal = result
+    end)
+    :Run()
+
+  unregisterMockEngine("mock_book_off")
+  Test.assertTrue(calculated, "engine should be called when books are off")
+  Test.assertEq(resultVal.move, "a2a3")
+end)
+
+Test.test("Default runner consults a specified opening book", function()
+  local calculated = false
+  local engine = createMockEngine("mock_book_hit", { move = "a2a3", immediate = true })
+  local origCalculate = engine.Calculate
+  engine.Calculate = function(self, state, loopFn, stepFn, onComplete)
+    calculated = true
+    return origCalculate(self, state, loopFn, stepFn, onComplete)
+  end
+  DeltaChess.Engines.Registry["mock_book_hit"] = engine
+
+  withRunnerBook({
+    id = "test_runner_e4",
+    name = "Runner E4",
+    positions = {
+      [START_FEN] = { { move = "e2e4", weight = 1 } },
+    },
+  }, function()
+    local resultVal, errorVal
+    EngineRunner.Create("mock_book_hit")
+      :Fen(START_FEN)
+      :OpeningBooks("test_runner_e4")
+      :OnComplete(function(result, err)
+        resultVal = result
+        errorVal = err
+      end)
+      :Run()
+
+    Test.assertTrue(not calculated, "engine should not run on a book hit")
+    Test.assertNil(errorVal)
+    Test.assertEq(resultVal.move, "e2e4")
+    Test.assertEq(resultVal.book, "test_runner_e4")
+    Test.assertEq(resultVal.weight, 1)
+    Test.assertNotNil(resultVal.san)
+  end)
+
+  unregisterMockEngine("mock_book_hit")
+end)
+
+Test.test("Book miss falls through to the engine", function()
+  local calculated = false
+  local engine = createMockEngine("mock_book_miss", { move = "e1e2", immediate = true })
+  local origCalculate = engine.Calculate
+  engine.Calculate = function(self, state, loopFn, stepFn, onComplete)
+    calculated = true
+    return origCalculate(self, state, loopFn, stepFn, onComplete)
+  end
+  DeltaChess.Engines.Registry["mock_book_miss"] = engine
+
+  local resultVal
+  EngineRunner.Create("mock_book_miss")
+    :Fen(OFFBOOK_FEN)
+    :OpeningBooks("first_moves")
+    :OnComplete(function(result, err)
+      resultVal = result
+    end)
+    :Run()
+
+  unregisterMockEngine("mock_book_miss")
+  Test.assertTrue(calculated, "engine should run on a book miss")
+  Test.assertEq(resultVal.move, "e1e2")
+  Test.assertNil(resultVal.book)
+end)
+
+Test.test("Unknown opening book id is an error", function()
+  registerMockEngine("mock_book_unknown", { move = "e2e4", immediate = true })
+
+  local resultVal, errorVal
+  EngineRunner.Create("mock_book_unknown")
+    :Fen(START_FEN)
+    :OpeningBooks("no_such_book_xyz")
+    :OnComplete(function(result, err)
+      resultVal = result
+      errorVal = err
+    end)
+    :Run()
+
+  unregisterMockEngine("mock_book_unknown")
+  Test.assertNil(resultVal)
+  Test.assertNotNil(errorVal)
+  Test.assertTrue(type(errorVal) == "string" and errorVal:find("not found"), "Error should mention 'not found'")
+end)
+
+Test.test("BookDepth limits how far the book is used", function()
+  local calculated = false
+  local engine = createMockEngine("mock_book_depth", { move = "d7d5", immediate = true })
+  local origCalculate = engine.Calculate
+  engine.Calculate = function(self, state, loopFn, stepFn, onComplete)
+    calculated = true
+    return origCalculate(self, state, loopFn, stepFn, onComplete)
+  end
+  DeltaChess.Engines.Registry["mock_book_depth"] = engine
+
+  local resultVal
+  EngineRunner.Create("mock_book_depth")
+    :Fen(E4_FEN)
+    :OpeningBooks("open_games")
+    :BookDepth(1)
+    :OnComplete(function(result, err)
+      resultVal = result
+    end)
+    :Run()
+
+  Test.assertTrue(calculated, "ply 1 should miss when BookDepth is 1")
+  Test.assertEq(resultVal.move, "d7d5")
+
+  calculated = false
+  resultVal = nil
+  EngineRunner.Create("mock_book_depth")
+    :Fen(E4_FEN)
+    :OpeningBooks("open_games")
+    :BookDepth(2)
+    :OnComplete(function(result, err)
+      resultVal = result
+    end)
+    :Run()
+
+  unregisterMockEngine("mock_book_depth")
+  Test.assertTrue(not calculated, "ply 1 should hit when BookDepth is 2")
+  local replies = { e7e5 = true, c7c5 = true, e7e6 = true, c7c6 = true }
+  Test.assertTrue(replies[resultVal.move], "open_games reply after e4")
+  Test.assertEq(resultVal.book, "open_games")
+end)
+
+Test.test("Auto-selects a book by ELO", function()
+  local calculated = false
+  local engine = createMockEngine("mock_book_auto", { move = "a2a3", immediate = true })
+  local origCalculate = engine.Calculate
+  engine.Calculate = function(self, state, loopFn, stepFn, onComplete)
+    calculated = true
+    return origCalculate(self, state, loopFn, stepFn, onComplete)
+  end
+  DeltaChess.Engines.Registry["mock_book_auto"] = engine
+
+  withRunnerBook({
+    id = "test_auto_gm",
+    name = "Auto GM",
+    elo = { 9000, 9100 },
+    positions = {
+      [START_FEN] = { { move = "g1h3", weight = 1 } },
+    },
+  }, function()
+    local resultVal
+    EngineRunner.Create("mock_book_auto")
+      :Fen(START_FEN)
+      :Elo(9050)
+      :BookDepth(8)
+      :OnComplete(function(result, err)
+        resultVal = result
+      end)
+      :Run()
+
+    Test.assertTrue(not calculated, "matching ELO book should be used")
+    Test.assertEq(resultVal.move, "g1h3")
+    Test.assertEq(resultVal.book, "test_auto_gm")
+  end)
+
+  unregisterMockEngine("mock_book_auto")
 end)

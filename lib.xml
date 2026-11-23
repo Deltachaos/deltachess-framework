@@ -11,6 +11,8 @@
 	<Script file="src/BoardMove.lua"/>
 	<Script file="src/Board.lua"/>
 	<Script file="src/EngineInterface.lua"/>
+	<Script file="src/Slice.lua"/>
+	<Script file="src/OpeningBook.lua"/>
 	<Script file="src/EngineRunner.lua"/>
 	<Script file="src/EngineDuel.lua"/>
 	<Script file="src/Engines/DumbGoblin.lua"/>

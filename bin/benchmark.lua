@@ -101,6 +101,7 @@ local function runOneTest(engineId, elo)
     local t0 = os.clock()
 
     EngineRunner.Create(engineId)
+      :UseOpeningBook(false)
       :Fen(fen)
       :Elo(elo)
       :DelayFn(function(next) next() end)

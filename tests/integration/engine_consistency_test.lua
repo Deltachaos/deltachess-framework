@@ -34,6 +34,7 @@ local function runEngineSync(engineId, fen, opts)
   opts = opts or {}
   local result, err
   local builder = EngineRunner.Create(engineId)
+    :UseOpeningBook(false)
     :Fen(fen)
     :LoopFn(syncLoop)
     :OnComplete(function(r, e)

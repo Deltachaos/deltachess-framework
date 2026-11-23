@@ -11608,20 +11608,7 @@ end
 
 function self:search(loopFn, delayFn, onComplete) -- void
 
-   -- loopFn(stepFn, doneFn): drives the iterative-deepening loop.
-   --   stepFn()  – runs one depth iteration; returns false when search is done.
-   --   doneFn()  – called once after stepFn returns false.
-   -- Default (sync): run all steps in a tight while-loop.
    loopFn = loopFn or function(step, done) while step() ~= false do end; done() end
-   stepFn = stepFn or function(items)
-       if type(items) == "function" then
-           items()
-       else
-           for _, step in ipairs(items) do
-               step()
-           end
-       end
-   end
    onComplete = onComplete or function() end
 
    local move = self.MoveNone;    -- int
@@ -11662,283 +11649,107 @@ function self:search(loopFn, delayFn, onComplete) -- void
       self.SearchInput.depth_limit = 4;        -- was 1
    end
 
-   -- Step-based iterative deepening with per-root-move yielding.
-   -- Each loopFn tick processes ONE root move (or handles depth
-   -- setup/teardown). This keeps the UI responsive even within a
-   -- single depth where each root move search can take hundreds of ms.
-
-   self.setjmp = false;
-   local depth = 0;
-   local needsInit = true;
-
-   -- Root move loop state (inlined from full_root).
-   -- These persist across steps while processing one depth.
-   local inRootLoop = false;
-   local rootMoveIdx = 0;
-   local root_alpha, root_beta, root_old_alpha, root_best_value;
-   local root_search_type;
-   local root_undo = self:undo_t();
-   local root_new_pv = {};
-
-   local function stepFn()
-
-      -- Handle setjmp (search interrupted from deep in the tree)
-      if(self.setjmp) then
-         self.setjmp = false;
-         inRootLoop = false;
-         --self:ASSERT(635, self.SearchInfo.can_stop);
-         --self:ASSERT(636, self.SearchBest.move~=self.MoveNone);
-         self:search_update_current();
-         return false;
+   local Slice = DeltaChess.Slice
+   Slice.Run(loopFn, function()
+      if Slice.Active() then
+         self.SearchInfo.check_inc = 256
+         self.SearchInfo.check_nb = 256
       end
 
-      -- ================================================================
-      -- If we are inside the root move loop, process one move per step
-      -- ================================================================
-      if(inRootLoop) then
+      self.setjmp = false
 
-         local list = self.SearchRoot.list;
-         local board = self.SearchCurrent.board;
+      self:list_copy(self.SearchRoot.list,self.SearchInput.list)
 
-         -- All root moves exhausted: finish this depth
-         if(rootMoveIdx >= list.size) then
-            inRootLoop = false;
+      self:board_copy(self.SearchCurrent.board,self.SearchInput.board)
+      self:my_timer_reset(self.SearchCurrent.timer)
+      self:my_timer_start(self.SearchCurrent.timer)
 
-            --self:ASSERT(666, self:value_is_ok(root_best_value));
+      self:trans_inc_date(self.Trans)
 
-            self:list_sort(list);
+      self:sort_init1()
+      self:search_full_init(self.SearchRoot.list,self.SearchCurrent.board)
 
-            --self:ASSERT(667, self.SearchBest.move==list.move[1+0]);
-            --self:ASSERT(668, self.SearchBest.value==root_best_value);
-
-            if(self.UseTrans  and  root_best_value > root_old_alpha  and  root_best_value < root_beta) then
-               self:pv_fill(self.SearchBest.pv, 0, board);
-            end
-
-            -- === post-depth logic ===
-
-            self:search_update_current();
-
-            if(self.DispDepthEnd) then
-               self:send_ndtm(6);
-            end
-
-            if(depth >= 1) then
-              self.SearchInfo.can_stop = true;
-            end
-
-            if(depth == 1
-              and  list.size >= 2
-              and  list.value[1+0] >= list.value[1+1] + self.EasyThreshold) then
-               self.SearchRoot.easy = true;
-            end
-
-            if(self.UseBad  and  depth > 1) then
-               self.SearchRoot.bad_2 = self.SearchRoot.bad_1;
-               self.SearchRoot.bad_1 = false;
-               --self:ASSERT(637, self.SearchRoot.bad_2==(self.SearchBest.value<=self.SearchRoot.last_value-self.BadThreshold));
-            end
-
-            self.SearchRoot.last_value = self.SearchBest.value;
-
-            -- stop search?
-
-            if(self.SearchInput.depth_is_limited
-              and  depth >= self.SearchInput.depth_limit) then
-               self.SearchRoot.flag = true;
-            end
-
-            if(self.SearchInput.time_is_limited
-              and  self.SearchCurrent.time >= self.SearchInput.time_limit_1
-              and  not self.SearchRoot.bad_2) then
-               self.SearchRoot.flag = true;
-            end
-
-            if(self.UseEasy
-              and  self.SearchInput.time_is_limited
-              and  self.SearchCurrent.time >= self.SearchInput.time_limit_1 * self.EasyRatio
-              and  self.SearchRoot.easy) then
-               --self:ASSERT(638, not self.SearchRoot.bad_2);
-               --self:ASSERT(639, not self.SearchRoot.change);
-               self.SearchRoot.flag = true;
-            end
-
-            if(self.UseEarly
-              and  self.SearchInput.time_is_limited
-              and  self.SearchCurrent.time >= self.SearchInput.time_limit_1 * self.EarlyRatio
-              and  not self.SearchRoot.bad_2
-              and  not self.SearchRoot.change) then
-               self.SearchRoot.flag = true;
-            end
-
-            if(self.SearchInfo.can_stop
-              and(self.SearchInfo.stop  or(self.SearchRoot.flag  and  not self.SearchInput.infinite))) then
-               return false;  -- search done
-            end
-
-            return true;  -- yield before next depth
+      for depth = 1, self.DepthMax - 1 do
+         if(self.DispDepthStart) then
+            self:send("info depth " .. self:formatd(depth))
          end
 
-         -- === search one root move ===
+         self.SearchRoot.bad_1 = false
+         self.SearchRoot.change = false
 
-         local i = rootMoveIdx;
-         local move = list.move[1+i];
-         local value;
+         self:board_copy(self.SearchCurrent.board,self.SearchInput.board)
 
-         self.SearchRoot.depth = depth;
-         self.SearchRoot.move = move;
-         self.SearchRoot.move_pos = i;
-         self.SearchRoot.move_nb = list.size;
+         local search_type = (self.UseShortSearch and depth <= self.ShortSearchDepth)
+                            and self.SearchShort or self.SearchNormal
 
-         self:search_update_root();
+         self:search_full_root(self.SearchRoot.list, self.SearchCurrent.board, depth, search_type)
 
-         local new_depth = self:full_new_depth(depth,move,board,self:board_is_check(board) and list.size==1,true);
-
-         self:move_do(board,move,root_undo);
-
-         if(root_search_type == self.SearchShort  or  root_best_value == self.ValueNone) then
-            -- first move or short search: full window
-            value = -self:full_search(board,-root_beta,-root_alpha,new_depth,1,root_new_pv,self.NodePV);
-            if(self.setjmp) then
-               -- Search interrupted (longjmp simulation).
-               -- Board is left modified - matches original full_root behaviour.
-               -- Next step will detect setjmp and end the search.
-               return true;
-            end
-         else
-            -- other moves: zero-window first
-            value = -self:full_search(board,-root_alpha-1,-root_alpha,new_depth,1,root_new_pv,self.NodeCut);
-            if(self.setjmp) then
-               return true;
-            end
-            if(value > root_alpha) then
-               -- re-search with full window
-               self.SearchRoot.change = true;
-               self.SearchRoot.easy = false;
-               self.SearchRoot.flag = false;
-               self:search_update_root();
-               value = -self:full_search(board,-root_beta,-root_alpha,new_depth,1,root_new_pv,self.NodePV);
-               if(self.setjmp) then
-                  return true;
-               end
-            end
+         if self.setjmp then
+            self.setjmp = false
+            self:search_update_current()
+            return
          end
 
-         self:move_undo(board,move,root_undo);
+         self:search_update_current()
 
-         -- Score the move
-         if(value <= root_alpha) then
-            list.value[1+i] = root_old_alpha;
-         else
-          if(value >= root_beta) then
-            list.value[1+i] = root_beta;
-          else
-            list.value[1+i] = value;
-          end
+         if(self.DispDepthEnd) then
+            self:send_ndtm(6)
          end
 
-         -- Update best
-         if(value > root_best_value  and(root_best_value == self.ValueNone  or  value > root_alpha)) then
-
-            self.SearchBest.move = move;
-            self.SearchBest.value = value;
-            if(value <= root_alpha) then
-               self.SearchBest.flags = self.SearchUpper;
-            else
-             if(value >= root_beta) then
-               self.SearchBest.flags = self.SearchLower;
-             else
-               self.SearchBest.flags = self.SearchExact;
-             end
-            end
-            self.SearchBest.depth = depth;
-            self:pv_cat(self.SearchBest.pv,root_new_pv,move);
-
-            self:search_update_best();
+         if(depth >= 1) then
+            self.SearchInfo.can_stop = true
+            Slice.AllowStop(true)
          end
 
-         if(value > root_best_value) then
-            root_best_value = value;
-            if(value > root_alpha) then
-               if(root_search_type == self.SearchNormal) then
-                 root_alpha = value;
-               end
-               if(value >= root_beta) then
-                  -- Beta cutoff: skip remaining moves, finish depth on next step
-                  rootMoveIdx = list.size;
-                  return true;
-               end
-            end
+         local list = self.SearchRoot.list
+
+         if(depth == 1
+           and  list.size >= 2
+           and  list.value[1+0] >= list.value[1+1] + self.EasyThreshold) then
+            self.SearchRoot.easy = true
          end
 
-         rootMoveIdx = rootMoveIdx + 1;
-         return true;  -- yield before next root move
+         if(self.UseBad  and  depth > 1) then
+            self.SearchRoot.bad_2 = self.SearchRoot.bad_1
+            self.SearchRoot.bad_1 = false
+         end
+
+         self.SearchRoot.last_value = self.SearchBest.value
+
+         if(self.SearchInput.depth_is_limited
+           and  depth >= self.SearchInput.depth_limit) then
+            self.SearchRoot.flag = true
+         end
+
+         if(self.SearchInput.time_is_limited
+           and  self.SearchCurrent.time >= self.SearchInput.time_limit_1
+           and  not self.SearchRoot.bad_2) then
+            self.SearchRoot.flag = true
+         end
+
+         if(self.UseEasy
+           and  self.SearchInput.time_is_limited
+           and  self.SearchCurrent.time >= self.SearchInput.time_limit_1 * self.EasyRatio
+           and  self.SearchRoot.easy) then
+            self.SearchRoot.flag = true
+         end
+
+         if(self.UseEarly
+           and  self.SearchInput.time_is_limited
+           and  self.SearchCurrent.time >= self.SearchInput.time_limit_1 * self.EarlyRatio
+           and  not self.SearchRoot.bad_2
+           and  not self.SearchRoot.change) then
+            self.SearchRoot.flag = true
+         end
+
+         if(self.SearchInfo.can_stop
+           and(self.SearchInfo.stop  or(self.SearchRoot.flag  and  not self.SearchInput.infinite))) then
+            return
+         end
       end
-
-      -- ================================================================
-      -- Not in root loop: depth setup / init
-      -- ================================================================
-
-      -- (Re-)init at start of each setjmp-loop iteration
-      if(needsInit) then
-
-         self:list_copy(self.SearchRoot.list,self.SearchInput.list);
-
-         self:board_copy(self.SearchCurrent.board,self.SearchInput.board);
-         self:my_timer_reset(self.SearchCurrent.timer);
-         self:my_timer_start(self.SearchCurrent.timer);
-
-         self:trans_inc_date(self.Trans);
-
-         self:sort_init1();
-         self:search_full_init(self.SearchRoot.list,self.SearchCurrent.board);
-
-         depth = 0;
-         needsInit = false;
-      end
-
-      depth = depth + 1;
-
-      -- for-loop exhausted (depth > DepthMax-1): loop back to setjmp check
-      if(depth > self.DepthMax - 1) then
-         needsInit = true;
-         return true;  -- continue (next step will check setjmp and re-init)
-      end
-
-      -- === start new depth: init root move loop ===
-
-      if(self.DispDepthStart) then
-         self:send("info depth " .. self:formatd(depth));
-      end
-
-      self.SearchRoot.bad_1 = false;
-      self.SearchRoot.change = false;
-
-      self:board_copy(self.SearchCurrent.board,self.SearchInput.board);
-
-      -- Init root loop state (from full_root / search_full_root)
-      local list = self.SearchRoot.list;
-      root_search_type = (self.UseShortSearch and depth <= self.ShortSearchDepth)
-                         and self.SearchShort or self.SearchNormal;
-      root_alpha = -self.ValueInf;
-      root_beta = self.ValueInf;
-      root_old_alpha = root_alpha;
-      root_best_value = self.ValueNone;
-
-      self.SearchCurrent.node_nb = self.SearchCurrent.node_nb + 1;
-      self.SearchInfo.check_nb = self.SearchInfo.check_nb - 1;
-
-      for i = 0, list.size-1, 1 do
-        list.value[1+i] = self.ValueNone;
-      end
-
-      rootMoveIdx = 0;
-      inRootLoop = true;
-
-      return true;  -- yield before first root move
-   end
-
-   loopFn(stepFn, onComplete)
+   end, function()
+      onComplete()
+   end, self._sliceState)
 
 end
 
@@ -12099,8 +11910,17 @@ function self:search_check()  -- void
       self.SearchRoot.flag = true;
    end
 
-   if(self.SearchInfo.can_stop
-     and(self.SearchInfo.stop  or(self.SearchRoot.flag  and  not self.SearchInput.infinite))) then
+   local Slice = DeltaChess.Slice
+   if Slice then
+      Slice.Poll(true)
+      if Slice.Stopped() then
+         self.SearchInfo.stop = true
+      end
+   end
+
+   if((self.SearchInfo.can_stop
+     and(self.SearchInfo.stop  or(self.SearchRoot.flag  and  not self.SearchInput.infinite)))
+     or (Slice and Slice.Stopped())) then
       self.setjmp = true;  -- the same as  longjmp(self.SearchInfo.buf,1);
    end
 

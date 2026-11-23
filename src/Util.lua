@@ -106,24 +106,33 @@ function M.EloToNodes(elo, eloRange, nodesMin, nodesMax)
 end
 
 --------------------------------------------------------------------------------
--- Clock: CPU/wall time in seconds. os.clock() in Lua; WoW polyfill uses GetTime().
--- Returns seconds (suitable for elapsed-time measurements and benchmarks).
+-- Clock: CPU/wall time in seconds.
+-- WoW: debugprofilestop() (ms, ticks during Lua). GetTime() does not.
+-- Standalone: os.clock().
 --------------------------------------------------------------------------------
-do
-  local os_clock = _G.os and _G.os.clock
-  local wow_get_time = _G.GetTime  -- seconds since UI load (WoW API)
-
-  function M.Clock()
-    if type(os_clock) == "function" then
-      local ok, v = pcall(os_clock)
-      if ok and v then return v end
+function M.Clock()
+  local stop = _G.debugprofilestop
+  if type(stop) == "function" then
+    local ok, v = pcall(stop)
+    if ok and type(v) == "number" then
+      return v / 1000
     end
-    if type(wow_get_time) == "function" then
-      local ok, v = pcall(wow_get_time)
-      if ok and v then return v end  -- GetTime() already returns seconds in WoW
-    end
-    return 0
   end
+  local os_clock = _G.os and _G.os.clock
+  if type(os_clock) == "function" then
+    local ok, v = pcall(os_clock)
+    if ok and type(v) == "number" then
+      return v
+    end
+  end
+  local wow_get_time = _G.GetTime
+  if type(wow_get_time) == "function" then
+    local ok, v = pcall(wow_get_time)
+    if ok and type(v) == "number" then
+      return v
+    end
+  end
+  return 0
 end
 
 --------------------------------------------------------------------------------
@@ -185,6 +194,18 @@ end
 -- SerializeJSON(value [, options]) -> output string or nil, err
 -- DeserializeJSON(source) -> value or nil, err
 --------------------------------------------------------------------------------
+
+--- True when a JSON encode/decode backend is loaded.
+function M.HasJSON()
+    if _G.C_EncodingUtil
+        and type(_G.C_EncodingUtil.SerializeJSON) == "function"
+        and type(_G.C_EncodingUtil.DeserializeJSON) == "function" then
+        return true
+    end
+    local json = DeltaChess.LibJSON
+    return json ~= nil and type(json.encode) == "function" and type(json.decode) == "function"
+end
+
 function M.SerializeJSON(value, options)
     if _G.C_EncodingUtil and type(_G.C_EncodingUtil.SerializeJSON) == "function" then
         local ok, out = pcall(_G.C_EncodingUtil.SerializeJSON, value, options)

@@ -184,21 +184,18 @@ local function orderMoves(pos, moves)
     return moves
 end
 
--- Node counter for limiting synchronous work
-local nodeCounter = { count = 0, limit = 5000 }
-
 -- Minimax with alpha-beta pruning
 local function minimax(pos, depth, alpha, beta, maximizingPlayer, state)
-    -- Increment node counter and check limit
-    nodeCounter.count = nodeCounter.count + 1
-    if nodeCounter.count > nodeCounter.limit then
-        -- Return early with current evaluation to prevent script timeout
-        return evaluatePosition(pos), nil
+    local Slice = DeltaChess.Slice
+    if Slice then
+        Slice.Poll()
+        if Slice.Stopped() then
+            return evaluatePosition(pos), nil
+        end
     end
-    
-    -- Check for cancellation
+
     if state.cancelled then
-        return nil, nil
+        return evaluatePosition(pos), nil
     end
     
     if depth == 0 then
@@ -223,7 +220,9 @@ local function minimax(pos, depth, alpha, beta, maximizingPlayer, state)
         for _, move in ipairs(moves) do
             local newPos = MoveGen.MakeMove(pos, move)
             local eval = minimax(newPos, depth - 1, alpha, beta, false, state)
-            if eval == nil then return nil, nil end  -- Cancelled
+            if Slice and Slice.Stopped() then
+                return evaluatePosition(pos), nil
+            end
             if eval > maxEval then maxEval, bestMove = eval, move end
             alpha = math.max(alpha, eval)
             if beta <= alpha then break end
@@ -234,7 +233,9 @@ local function minimax(pos, depth, alpha, beta, maximizingPlayer, state)
         for _, move in ipairs(moves) do
             local newPos = MoveGen.MakeMove(pos, move)
             local eval = minimax(newPos, depth - 1, alpha, beta, true, state)
-            if eval == nil then return nil, nil end  -- Cancelled
+            if Slice and Slice.Stopped() then
+                return evaluatePosition(pos), nil
+            end
             if eval < minEval then minEval, bestMove = eval, move end
             beta = math.min(beta, eval)
             if beta <= alpha then break end
@@ -268,7 +269,7 @@ end
 
 -- Main Calculate function implementing the new interface
 function M:Calculate(state, loopFn, stepFn, onComplete)
-    loopFn = loopFn or function(step, done) while step() ~= false do end; done() end
+    local Slice = DeltaChess.Slice
     onComplete = onComplete or function() end
 
     if state.cancelled then
@@ -276,163 +277,103 @@ function M:Calculate(state, loopFn, stepFn, onComplete)
         return
     end
 
-    -- Parse FEN to position
     local pos, err = MoveGen.ParseFen(state.fen)
     if not pos then
         onComplete(nil, err or "invalid FEN")
         return
     end
 
-    local isWhite = (pos.stm == "w")
-    local maxDepth = eloToParams(state.elo)
-    
-    -- Flattened state for iterative deepening and move evaluation
-    local depth = 1
-    local bestMoveSoFar = nil
-    local nodeCount = 0
-    local currentMoves = nil
-    local moveIdx = 0
-    local bestMove = nil
-    local bestEval = nil
-    local alpha, beta = nil, nil
-    local allEvals = nil
-    local needNewDepth = true
-    local searchResult = nil
+    Slice.Run(loopFn, function()
+        local isWhite = (pos.stm == "w")
+        local maxDepth = eloToParams(state.elo)
+        local bestMoveSoFar = nil
+        local bestEvalSoFar = nil
+        local nodeCount = 0
 
-    loopFn(function()
-        -- stepFn: each call does one unit of work
-        
-        -- Check cancellation
-        if state.cancelled then
-            searchResult = { bestMoveSoFar, bestEval, nodeCount }
-            return false
-        end
-
-        -- Start a new depth
-        if needNewDepth then
-            if depth > maxDepth then
-                -- Search complete
-                searchResult = { bestMoveSoFar, bestEval, nodeCount }
-                return false
+        for depth = 1, maxDepth do
+            if (Slice and Slice.Stopped()) or state.cancelled then
+                break
             end
 
-            -- Get legal moves for this depth
-            currentMoves = MoveGen.LegalMoves(pos)
+            local currentMoves = MoveGen.LegalMoves(pos)
             if #currentMoves == 0 then
-                -- No legal moves
-                searchResult = { nil, nil, nodeCount }
-                return false
+                break
             end
 
             orderMoves(pos, currentMoves)
             putFirst(currentMoves, bestMoveSoFar)
-            
-            moveIdx = 0
-            bestMove = nil
-            bestEval = isWhite and -math.huge or math.huge
-            alpha = -math.huge
-            beta = math.huge
-            allEvals = {}
-            needNewDepth = false
-            return true  -- yield before first move evaluation
-        end
 
-        -- Evaluate next move at current depth
-        moveIdx = moveIdx + 1
-        if moveIdx > #currentMoves then
-            -- All moves evaluated at this depth           
-            bestMoveSoFar = bestMove
-            
-            if depth >= maxDepth then
-                -- Search complete
-                searchResult = { bestMoveSoFar, bestEval, nodeCount }
-                return false
+            local bestMove = nil
+            local bestEval = isWhite and -math.huge or math.huge
+            local alpha, beta = -math.huge, math.huge
+
+            for _, move in ipairs(currentMoves) do
+                if (Slice and Slice.Stopped()) or state.cancelled then
+                    break
+                end
+
+                local newPos = MoveGen.MakeMove(pos, move)
+                local eval
+                if depth <= 1 then
+                    eval = evaluatePosition(newPos)
+                else
+                    eval = minimax(newPos, depth - 1, alpha, beta, not isWhite, state)
+                end
+                if (Slice and Slice.Stopped()) or state.cancelled then
+                    break
+                end
+
+                nodeCount = nodeCount + 1
+
+                if isWhite then
+                    if eval > bestEval then bestEval, bestMove = eval, move end
+                    alpha = math.max(alpha, eval)
+                else
+                    if eval < bestEval then bestEval, bestMove = eval, move end
+                    beta = math.min(beta, eval)
+                end
+
+                if bestMove then
+                    bestMoveSoFar = bestMove
+                    bestEvalSoFar = bestEval
+                    if Slice then Slice.AllowStop(true) end
+                end
+
+                if beta <= alpha then
+                    break
+                end
             end
-            
-            -- Advance to next depth
-            depth = depth + 1
-            needNewDepth = true
-            return true  -- yield before next depth
-        end
 
-        -- Evaluate one move
-        local move = currentMoves[moveIdx]
-        local newPos = MoveGen.MakeMove(pos, move)
-        local eval
-        
-        if depth <= 1 then
-            eval = evaluatePosition(newPos)
-        else
-            -- Reset node counter before each minimax call
-            nodeCounter.count = 0
-            eval = minimax(newPos, depth - 1, alpha, beta, not isWhite, state)
-            if eval == nil then
-                -- Cancelled
-                searchResult = { bestMoveSoFar, bestEval, nodeCount }
-                return false
+            if bestMove then
+                bestMoveSoFar = bestMove
+                bestEvalSoFar = bestEval
+                if Slice then Slice.AllowStop(true) end
             end
         end
-        
-        nodeCount = nodeCount + 1
-        table.insert(allEvals, { move = move, eval = eval })
 
-        if isWhite then
-            if eval > bestEval then bestEval, bestMove = eval, move end
-            alpha = math.max(alpha, eval)
-        else
-            if eval < bestEval then bestEval, bestMove = eval, move end
-            beta = math.min(beta, eval)
-        end
-
-        if beta <= alpha then
-            -- Alpha-beta cutoff - complete this depth early
-            bestMoveSoFar = bestMove
-            if depth >= maxDepth then
-                searchResult = { bestMoveSoFar, bestEval, nodeCount }
-                return false
-            end
-            -- Advance to next depth
-            depth = depth + 1
-            needNewDepth = true
-            return true
-        end
-        
-        -- Continue evaluating moves at this depth
-        return true
-    end, function()
-        -- doneFn: called when stepFn returns false
-        if state.cancelled then
-            onComplete(nil, "cancelled")
-            return
-        end
-
-        local move, score, nodes = searchResult[1], searchResult[2], searchResult[3]
-        
+        local move = bestMoveSoFar
         if not move then
-            -- No move found - try to get any legal move as fallback
             local moves = MoveGen.LegalMoves(pos)
             if #moves > 0 then
                 move = moves[1]
             else
-                onComplete(nil, "no legal moves")
-                return
+                return nil, "no legal moves"
             end
         end
 
         local uci = MoveGen.MoveToUci(move)
         if not uci then
-            onComplete(nil, "failed to convert move")
-            return
+            return nil, "failed to convert move"
         end
 
-        onComplete({
+        return {
             move = uci,
             san = MoveGen.MoveToSan(pos, move) or uci,
-            nodes = nodes or nodeCount,
-            score = score or 0,
+            nodes = nodeCount,
+            score = bestEvalSoFar or 0,
             mate = nil
-        }, nil)
-    end)
+        }, nil
+    end, onComplete, state)
 end
 
 -- Register this engine when loaded

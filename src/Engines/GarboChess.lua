@@ -1659,6 +1659,15 @@ end
 local function QSearch(S, alpha, beta, ply)
     S.g_qNodeCount = S.g_qNodeCount + 1
 
+    local Slice = DeltaChess.Slice
+    if Slice then
+        Slice.Poll()
+        if Slice.Stopped() then
+            S.g_searchValid = false
+            return alpha
+        end
+    end
+
     local realEval = iif(S.g_inCheck, (S.minEval + 1), Evaluate(S))
 
     if realEval >= beta then return realEval end
@@ -1764,6 +1773,15 @@ end
 local function AllCutNode(S, ply, depth, beta, allowNull)
     if ply <= 0 then
         return QSearch(S, beta - 1, beta, 0)
+    end
+
+    local Slice = DeltaChess.Slice
+    if Slice then
+        Slice.Poll()
+        if Slice.Stopped() then
+            S.g_searchValid = false
+            return beta - 1
+        end
     end
 
     if S.g_timeout and (DeltaChess.Util.Clock() - S.g_startTime > S.g_timeout) then
@@ -1912,6 +1930,15 @@ local function AlphaBeta(S, ply, depth, alpha, beta)
 
     S.g_nodeCount = S.g_nodeCount + 1
 
+    local Slice = DeltaChess.Slice
+    if Slice then
+        Slice.Poll()
+        if Slice.Stopped() then
+            S.g_searchValid = false
+            return alpha
+        end
+    end
+
     if depth > 0 and IsRepDraw(S) then return 0 end
 
     alpha = iif(alpha < S.minEval + depth, alpha, S.minEval + depth)
@@ -2021,11 +2048,11 @@ local function FormatMove(S, move)
 end
 
 --------------------------------------------------------------------------------
--- Search function (loopFn yields between plies to keep event loop responsive)
+-- Search function (yields from Slice.Poll inside the tree)
 --------------------------------------------------------------------------------
 
-local function Search(S, maxPly, onPlyCallback, onCompleteCallback, loopFn)
-    loopFn = loopFn or function(step, done) while step() ~= false do end; done() end
+local function Search(S, maxPly, onPlyCallback, onCompleteCallback, loopFn, state)
+    local Slice = DeltaChess.Slice
     local alpha = S.minEval
     local beta = S.maxEval
     local bestMove = 0
@@ -2039,59 +2066,58 @@ local function Search(S, maxPly, onPlyCallback, onCompleteCallback, loopFn)
     S.g_finCnt = 0
     S.g_startTime = DeltaChess.Util.Clock()
 
-    -- Step-based iterative deepening.
-    -- Each call to stepFn() runs one ply of search and returns
-    -- true (continue) or false (done).
-    local ply = 1
-    local redoPly = false
+    Slice.Run(loopFn, function()
+        local ply = 1
+        while ply <= maxPly and S.g_searchValid and not Slice.Stopped() do
+            if state and state.cancelled then
+                break
+            end
 
-    loopFn(function()
-        -- stepFn: one ply per step
-        if ply > maxPly or not S.g_searchValid then
-            return false  -- done
+            local tmp = AlphaBeta(S, ply, 0, alpha, beta)
+            if not S.g_searchValid or Slice.Stopped() then
+                break
+            end
+
+            value = tmp
+
+            local redoPly = false
+            if value > alpha and value < beta then
+                alpha = value - 500
+                beta = value + 500
+                if alpha < S.minEval then alpha = S.minEval end
+                if beta > S.maxEval then beta = S.maxEval end
+            elseif alpha ~= S.minEval then
+                alpha = S.minEval
+                beta = S.maxEval
+                redoPly = true
+            end
+
+            if S.g_hashTable[1 + bit.band(S.g_hashKeyLow, S.g_hashMask)] ~= nil then
+                bestMove = S.g_hashTable[1 + bit.band(S.g_hashKeyLow, S.g_hashMask)].bestMove
+            end
+
+            if bestMove ~= 0 then
+                Slice.AllowStop(true)
+            end
+
+            if onPlyCallback then
+                onPlyCallback(bestMove, value, ply)
+            end
+
+            if not redoPly then
+                ply = ply + 1
+            end
         end
-
-        local tmp = AlphaBeta(S, ply, 0, alpha, beta)
-        if not S.g_searchValid then
-            return false  -- done
-        end
-
-        value = tmp
-
-        if value > alpha and value < beta then
-            alpha = value - 500
-            beta = value + 500
-            if alpha < S.minEval then alpha = S.minEval end
-            if beta > S.maxEval then beta = S.maxEval end
-        elseif alpha ~= S.minEval then
-            -- Redo same ply with full window
-            alpha = S.minEval
-            beta = S.maxEval
-            redoPly = true
-            return true  -- continue (will redo same ply)
-        end
-
-        if S.g_hashTable[1 + bit.band(S.g_hashKeyLow, S.g_hashMask)] ~= nil then
-            bestMove = S.g_hashTable[1 + bit.band(S.g_hashKeyLow, S.g_hashMask)].bestMove
-        end
-
-        if onPlyCallback then
-            onPlyCallback(bestMove, value, ply)
-        end
-
-        if redoPly then
-            redoPly = false
-            -- Don't advance ply, redo at same depth
-        else
-            ply = ply + 1
-        end
-        return true  -- continue to next ply
-    end, function()
-        -- doneFn
+        return { bestMove, value, ply - 1 }, nil
+    end, function(result)
         if onCompleteCallback then
-            onCompleteCallback(bestMove, value, ply - 1)
+            if result then
+                onCompleteCallback(result[1], result[2], result[3])
+            else
+                onCompleteCallback(bestMove, value, 0)
+            end
         end
-    end)
+    end, state)
 end
 
 --------------------------------------------------------------------------------
@@ -2176,7 +2202,6 @@ local function ParseUciMove(S, uciMove)
 end
 
 function M:Calculate(state, loopFn, stepFn, onComplete)
-    loopFn = loopFn or function(step, done) while step() ~= false do end; done() end
     onComplete = onComplete or function() end
 
     if state.cancelled then
@@ -2184,7 +2209,6 @@ function M:Calculate(state, loopFn, stepFn, onComplete)
         return
     end
 
-    -- Create fresh engine state for this calculation
     local S = createEngineState()
     InitializeEval(S)
     ResetGame(S)
@@ -2192,112 +2216,76 @@ function M:Calculate(state, loopFn, stepFn, onComplete)
     local moves = state.moves
     local usedMoveReplay = false
 
-    -- Define runSearch so both replay path and direct path can call it
-    local function runSearch()
-        -- Fall back to FEN initialization if move replay wasn't used
-        if not usedMoveReplay then
-            local fen = state.fen
-            if not fen or fen == "" then
-                onComplete(nil, "invalid FEN")
-                return
-            end
-
-            local ok, err = pcall(function() InitializeFromFen(S, fen) end)
-            if not ok then
-                onComplete(nil, "FEN parse error: " .. tostring(err))
-                return
-            end
-        end
-
-        -- Calculate search depth from ELO
-        local maxDepth = self:GetSearchDepth(state)
-
-        -- Set timeout only when time_limit_ms is provided; otherwise no time limit is checked
-        if state.time_limit_ms then
-            S.g_timeout = state.time_limit_ms / 1000
-        else
-            S.g_timeout = nil
-        end
-
-        if state.cancelled then
-            onComplete(nil, "cancelled")
-            return
-        end
-
-        -- Search uses loopFn to yield between plies
-        Search(S, maxDepth, nil, function(bestMove, value, depth)
-            if bestMove == 0 or bestMove == nil then
-                onComplete(nil, "no legal moves")
-                return
-            end
-
-            local uci = FormatMove(S, bestMove)
-            onComplete({
-                move = uci,
-                san = uci,
-                depth = depth or maxDepth,
-                nodes = S.g_nodeCount + S.g_qNodeCount,
-                score = value,
-            }, nil)
-        end, loopFn)
-    end
-
-    -- If moves are provided, replay them from start position to populate
-    -- transposition tables and repetition history for better search
     if moves and #moves > 0 then
-        -- Initialize from starting position
         local startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-        local ok, err = pcall(function() InitializeFromFen(S, startFen) end)
+        local ok = pcall(function() InitializeFromFen(S, startFen) end)
         if ok then
-            -- Replay moves step-by-step using loopFn
-            local replayIdx = 1
             local replayFailed = false
-
-            loopFn(function()
-                -- stepFn: replay one move per step
-                if state.cancelled then
-                    return false
-                end
-                if replayIdx > #moves then
-                    return false  -- done replaying
-                end
-                local uciMove = moves[replayIdx]
+            for i = 1, #moves do
+                local uciMove = moves[i]
                 local move = ParseUciMove(S, uciMove)
                 if not move then
-                    -- Replay failed; reset and fall back to FEN
-                    S = createEngineState()
-                    InitializeEval(S)
-                    ResetGame(S)
                     replayFailed = true
-                    return false
+                    break
                 end
                 local success = MakeMove(S, move)
                 if not success then
-                    S = createEngineState()
-                    InitializeEval(S)
-                    ResetGame(S)
                     replayFailed = true
-                    return false
+                    break
                 end
-                replayIdx = replayIdx + 1
-                return true  -- continue replaying
-            end, function()
-                -- doneFn: replay done, start search
-                if state.cancelled then
-                    onComplete(nil, "cancelled")
-                    return
-                end
-                if not replayFailed then
-                    usedMoveReplay = true
-                end
-                runSearch()
-            end)
+            end
+            if replayFailed then
+                S = createEngineState()
+                InitializeEval(S)
+                ResetGame(S)
+            else
+                usedMoveReplay = true
+            end
+        end
+    end
+
+    if not usedMoveReplay then
+        local fen = state.fen
+        if not fen or fen == "" then
+            onComplete(nil, "invalid FEN")
+            return
+        end
+
+        local ok, err = pcall(function() InitializeFromFen(S, fen) end)
+        if not ok then
+            onComplete(nil, "FEN parse error: " .. tostring(err))
             return
         end
     end
 
-    -- No move replay path: run search
-    runSearch()
+    local maxDepth = self:GetSearchDepth(state)
+
+    if state.time_limit_ms then
+        S.g_timeout = state.time_limit_ms / 1000
+    else
+        S.g_timeout = nil
+    end
+
+    if state.cancelled then
+        onComplete(nil, "cancelled")
+        return
+    end
+
+    Search(S, maxDepth, nil, function(bestMove, value, depth)
+        if bestMove == 0 or bestMove == nil then
+            onComplete(nil, "no legal moves")
+            return
+        end
+
+        local uci = FormatMove(S, bestMove)
+        onComplete({
+            move = uci,
+            san = uci,
+            depth = depth or maxDepth,
+            nodes = S.g_nodeCount + S.g_qNodeCount,
+            score = value,
+        }, nil)
+    end, loopFn, state)
 end
 
 DeltaChess.Engines.Registry[M.id] = M

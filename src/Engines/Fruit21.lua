@@ -11,11 +11,9 @@
   - Sophisticated evaluation (material, piece-square tables, pawn structure,
     king safety, mobility, passed pawns)
 
-  The search uses a step-based loopFn(stepFn, doneFn) that yields between
-  iterative-deepening depths so the event loop / UI stays responsive.
-  Each depth runs in a flat call (no growing stack) because the loop driver
-  calls the step function, which returns, and then the next tick calls it again.
-  The loopFn is provided by the EngineRunner.
+  The search runs inside a slice coroutine and yields from search_check
+  when the current Compute/LoopFn budget is spent. The loopFn is provided
+  by the EngineRunner.
 
   Registers globally: DeltaChess.Engines.Registry.fruit21
 ]]
@@ -176,7 +174,9 @@ function M:Calculate(state, loopFn, stepFn, onComplete)
         goCmd = "go depth " .. depth
     end
 
-    -- Run search (loopFn yields between iterative-deepening depths)
+    engine._sliceState = state
+
+    -- Run search (yields from Slice.Poll inside search_check)
     local searchOk, searchErr = pcall(function()
         engine:do_input(goCmd, loopFn, stepFn, function()
             -- Search complete - extract results
