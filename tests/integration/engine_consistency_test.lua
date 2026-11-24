@@ -35,6 +35,11 @@ local function runEngineSync(engineId, fen, opts)
     :UseOpeningBook(false)
     :Fen(fen)
     :LoopFn(syncLoop)
+    -- Run() defaults to 8ms slices when LoopFn is set; keep search unsliced.
+    :SliceMs(-1)
+    -- Disable EngineRunner's 20s default so snapshots are ply/node limited only.
+    -- Use false (not 0): Lua treats 0 as truthy, and engines check `if time_limit_ms`.
+    :TimeLimitMs(false)
     :OnComplete(function(r, e)
       result = r
       err = e
@@ -45,7 +50,6 @@ local function runEngineSync(engineId, fen, opts)
   if opts.node_limit then
     builder:NodeLimit(opts.node_limit)
   end
-  -- Do not pass time_limit so results are predictable (ply/node limited only)
   builder:Run()
   return result, err
 end

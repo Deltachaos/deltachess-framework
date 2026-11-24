@@ -138,7 +138,11 @@ function M.Run(loopFn, work, onComplete, state)
         canStop = false,
         result = nil,
         err = nil,
-        timeLimitMs = state and state.time_limit_ms or nil,
+        -- 0/false/nil => no limit. (Lua treats 0 as truthy, so callers using
+        -- TimeLimitMs(0) must not be treated as an already-expired budget.)
+        timeLimitMs = (state and type(state.time_limit_ms) == "number" and state.time_limit_ms > 0)
+            and state.time_limit_ms
+            or nil,
     }
 
     local co = coroutine.create(function()

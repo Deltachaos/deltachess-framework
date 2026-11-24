@@ -767,7 +767,7 @@ local function search(tt, pos, maxn, state, loopFn, onSearchDone)
                 lastMove = entry.move
             end
             if Slice then Slice.AllowStop(true) end
-            if nodeCount[1] >= maxn or math.abs(score) >= MATE_VALUE then
+            if nodeCount[1] >= maxn or (score ~= nil and math.abs(score) >= MATE_VALUE) then
                 break
             end
         end
